@@ -9,6 +9,79 @@ function normalize(value: string) {
   return value.replaceAll("'", '"').replace(/\s+/g, " ").toLowerCase();
 }
 
+type FunctionNote = { name: string; description: string };
+
+const functionGlossary: Array<FunctionNote & { patterns: string[] }> = [
+  { name: "print()", patterns: ["print("], description: "Writes a value to the terminal so a person, log collector, or pipeline can see the result." },
+  { name: "int()", patterns: ["int("], description: "Converts a compatible string or number into an integer; invalid text raises ValueError." },
+  { name: "dict.get()", patterns: ["counts.get(", "page.get("], description: "Reads a dictionary key and returns a safe default when that key is absent." },
+  { name: "next()", patterns: ["next("], description: "Takes the next matching item from an iterator; its optional default prevents StopIteration." },
+  { name: "Path()", patterns: ["path("], description: "Creates an object-oriented filesystem path that works consistently across operating systems." },
+  { name: "Path.glob()/rglob()", patterns: [".glob(", ".rglob("], description: "Finds files whose names match a pattern; rglob also searches nested directories." },
+  { name: "Path.mkdir()", patterns: [".mkdir("], description: "Creates a directory; parents=True creates missing parents and exist_ok=True makes repeated runs safe." },
+  { name: "Path.stat()", patterns: [".stat()"], description: "Returns filesystem metadata such as size, permissions, and modification time." },
+  { name: "Path.write_text()", patterns: [".write_text("], description: "Writes text to a file with an explicit encoding in one clear operation." },
+  { name: "Path.exists()", patterns: [".exists()"], description: "Checks whether a path is present before code reads, changes, or removes it." },
+  { name: "Path.unlink()", patterns: [".unlink()"], description: "Removes a file; guarding it with exists() makes cleanup repeatable." },
+  { name: "Path.rename()", patterns: [".rename("], description: "Moves or renames the path to the supplied destination." },
+  { name: "open()", patterns: ["with open("], description: "Opens a file as a context manager so Python closes it automatically, including after errors." },
+  { name: "shutil.copy2()", patterns: ["shutil.copy2("], description: "Copies a file while preserving useful metadata such as modification times." },
+  { name: "shutil.disk_usage()", patterns: ["shutil.disk_usage("], description: "Returns total, used, and free bytes for a filesystem path." },
+  { name: "json.load()/loads()", patterns: ["json.load(", "json.loads("], description: "Parses JSON data into Python dictionaries, lists, strings, and numbers." },
+  { name: "json.dumps()", patterns: ["json.dumps("], description: "Serializes Python data into a JSON string suitable for logs or APIs." },
+  { name: "csv.DictWriter()", patterns: ["csv.dictwriter("], description: "Writes dictionaries as CSV rows using named columns." },
+  { name: "ZipFile()", patterns: ["zipfile(", "zipfile("], description: "Opens or creates a ZIP archive as a context manager." },
+  { name: "hashlib.sha256()", patterns: ["hashlib.sha256("], description: "Creates a SHA-256 hash object used to verify that bytes have not changed." },
+  { name: "os.replace()", patterns: ["os.replace("], description: "Atomically replaces the destination with a completed temporary file, avoiding partial writes." },
+  { name: "os.environ.get()", patterns: ["os.environ.get("], description: "Reads configuration from the environment without embedding it in source code." },
+  { name: "os.kill()", patterns: ["os.kill("], description: "Sends a Unix signal to a process by PID." },
+  { name: "subprocess.run()", patterns: ["subprocess.run("], description: "Runs a command and waits for it to finish; argument lists avoid shell-string injection." },
+  { name: "subprocess.Popen()", patterns: ["subprocess.popen("], description: "Starts a process without waiting immediately, allowing output to be streamed while it runs." },
+  { name: "asyncio.gather()", patterns: ["asyncio.gather("], description: "Schedules multiple awaitable operations together and collects their results in order." },
+  { name: "asyncio.run()", patterns: ["asyncio.run("], description: "Creates an event loop, runs the top-level coroutine, and closes the loop cleanly." },
+  { name: "yield", patterns: ["yield "], description: "Produces one item at a time from a generator, avoiding a large in-memory result list." },
+  { name: "@contextmanager", patterns: ["@contextmanager"], description: "Turns a generator with setup, yield, and cleanup logic into a with-statement context manager." },
+  { name: "@dataclass", patterns: ["@dataclass"], description: "Generates common class methods automatically for a typed data record." },
+  { name: "ArgumentParser()", patterns: ["argparse.argumentparser("], description: "Defines a command-line interface and its accepted options." },
+  { name: "parse_args()", patterns: [".parse_args("], description: "Reads command-line input and returns the validated argument values." },
+  { name: "logging.getLogger()", patterns: ["getlogger("], description: "Creates or retrieves a named logger so messages have a consistent source." },
+  { name: "time.sleep()", patterns: ["time.sleep("], description: "Pauses before another attempt; an exponential expression increases the delay after repeated failures." },
+  { name: "ThreadPoolExecutor()", patterns: ["threadpoolexecutor("], description: "Runs a bounded number of blocking operations concurrently using worker threads." },
+  { name: "unittest.mock.patch()", patterns: ["with patch("], description: "Temporarily replaces a dependency so tests do not call real systems." },
+  { name: "sys.exit()", patterns: ["sys.exit("], description: "Ends the program with a meaningful status code that shells and CI systems can interpret." },
+  { name: "boto3.client()", patterns: ["boto3.client("], description: "Creates a low-level AWS service client using the active profile, role, or environment credential chain." },
+  { name: "boto3.Session()", patterns: ["boto3.session("], description: "Creates an isolated AWS SDK session, commonly from a profile or temporary assumed-role credentials." },
+  { name: "get_paginator()", patterns: ["get_paginator("], description: "Creates a boto3 paginator so every page of a large AWS API result is processed." },
+  { name: "paginate()", patterns: [".paginate("], description: "Requests successive AWS result pages without manually managing continuation tokens." },
+  { name: "describe_instances()", patterns: ["describe_instances("], description: "Calls the EC2 API to retrieve instance inventory, optionally narrowed with server-side filters." },
+  { name: "put_metric_data()", patterns: ["put_metric_data("], description: "Publishes custom metric values to an Amazon CloudWatch namespace." },
+  { name: "get_caller_identity()", patterns: ["get_caller_identity("], description: "Uses AWS STS to report the account and ARN for the active execution identity." },
+  { name: "upload_file()", patterns: [".upload_file("], description: "Uploads a local file to S3 and supports transfer options such as server-side encryption." },
+  { name: "get_waiter()/wait()", patterns: ["get_waiter("], description: "Uses boto3's built-in polling rules to wait until an AWS resource reaches a target state." },
+  { name: "assume_role()", patterns: ["assume_role("], description: "Requests temporary STS credentials for an approved IAM role, avoiding long-lived cross-account keys." },
+  { name: "DefaultAzureCredential()", patterns: ["defaultazurecredential("], description: "Tries safe Azure identity sources in order, including local CLI login and managed identity." },
+  { name: "ComputeManagementClient()", patterns: ["computemanagementclient("], description: "Creates an authenticated Azure client for virtual-machine management operations." },
+  { name: "ResourceManagementClient()", patterns: ["resourcemanagementclient("], description: "Creates an Azure client for resource groups and subscription resources." },
+  { name: "BlobServiceClient()", patterns: ["blobserviceclient("], description: "Connects to an Azure Storage account using the supplied account URL and credential." },
+  { name: "MetricsQueryClient()", patterns: ["metricsqueryclient("], description: "Creates an Azure Monitor client for querying resource metrics." },
+  { name: "SecretClient()", patterns: ["secretclient("], description: "Creates an authenticated Azure Key Vault client for controlled secret access." },
+  { name: "poller.result()", patterns: ["poller.result("], description: "Waits for an Azure long-running operation to complete and surfaces any failure." },
+];
+
+function explainFunctions(solution: string): FunctionNote[] {
+  const source = normalize(solution);
+  const matches = functionGlossary.filter((entry) =>
+    entry.patterns.some((pattern) => source.includes(pattern)),
+  );
+  return matches.length
+    ? matches.map(({ name, description }) => ({ name, description }))
+    : [{
+        name: "Python control flow",
+        description:
+          "The statements combine values, conditions, loops, or returns to transform the scenario input into the required result.",
+      }];
+}
+
 export default function Home() {
   const [chapterId, setChapterId] = useState(chapters[0].id);
   const [mode, setMode] = useState<Mode>("learn");
@@ -352,6 +425,7 @@ function PracticeView({
   openScenario: (index: number) => void;
 }) {
   const isComplete = completed.includes(scenarioKey);
+  const functionNotes = explainFunctions(scenario.solution);
 
   return (
     <div className="practice-shell">
@@ -437,6 +511,24 @@ function PracticeView({
               <div className="reveal solution">
                 <b>Reference solution</b>
                 <pre>{scenario.solution}</pre>
+                <div className="explanation-block">
+                  <h4>What each function does</h4>
+                  <dl>
+                    {functionNotes.map((note) => (
+                      <div key={note.name}>
+                        <dt>{note.name}</dt>
+                        <dd>{note.description}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <h4>How this result is achieved</h4>
+                  <p>
+                    The code applies these operations to the scenario&apos;s
+                    provided input, then follows the requested decision or data
+                    flow. That produces the safe practice result:
+                    <code>{scenario.output}</code>
+                  </p>
+                </div>
                 <button
                   onClick={() => {
                     setCode(scenario.solution);
