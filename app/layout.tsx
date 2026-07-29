@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PyTrail — Learn Python Automation",
+  title: "PyTrail — Python Automation from Basic to Advanced",
   description:
-    "A safe, step-by-step playground for learning Python automation across OS, Linux, AWS, and Azure.",
+    "Learn Python automation from foundations to production through practical chapters and 300 scenario-based challenges across OS, Linux, AWS boto3, and Azure.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
