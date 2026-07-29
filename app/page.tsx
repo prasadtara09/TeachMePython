@@ -88,6 +88,8 @@ export default function Home() {
   const [scenarioIndex, setScenarioIndex] = useState(0);
   const [code, setCode] = useState(chapters[0].scenarios[0].starter);
   const [output, setOutput] = useState("Ready. Complete the scenario, then run your solution.");
+  // Progress is intentionally kept only in memory. Refreshing the page or
+  // restarting the container always creates a clean playground.
   const [completed, setCompleted] = useState<string[]>([]);
   const [openUnit, setOpenUnit] = useState(0);
   const [showHint, setShowHint] = useState(false);
@@ -98,17 +100,6 @@ export default function Home() {
   const chapter = chapters.find((item) => item.id === chapterId) ?? chapters[0];
   const scenario = chapter.scenarios[scenarioIndex] ?? chapter.scenarios[0];
   const scenarioKey = `${chapter.id}:${scenario.id}`;
-
-  useEffect(() => {
-    const saved = window.localStorage.getItem("pytrail-scenario-progress");
-    if (saved) {
-      try {
-        setCompleted(JSON.parse(saved));
-      } catch {
-        setCompleted([]);
-      }
-    }
-  }, []);
 
   const chapterCompleted = useMemo(
     () => completed.filter((key) => key.startsWith(`${chapter.id}:`)).length,
@@ -153,10 +144,6 @@ export default function Home() {
         setOutput(`✓ All checks passed\n\n${scenario.output}`);
         const next = Array.from(new Set([...completed, scenarioKey]));
         setCompleted(next);
-        window.localStorage.setItem(
-          "pytrail-scenario-progress",
-          JSON.stringify(next),
-        );
       } else {
         setOutput(
           `Not quite yet — ${missing.length} requirement${missing.length === 1 ? "" : "s"} still need attention.\n\nReview the scenario, use the hint, and try again. No real machine or cloud account was changed.`,
@@ -197,7 +184,7 @@ export default function Home() {
         </a>
         <div className="topbar-center">
           <span className="status-dot" />
-          No login · progress stays on this device
+          No login · progress resets on refresh
         </div>
         <div className="progress-pill" title={`${overallPercent}% complete`}>
           <span>{completed.length}/{totalScenarios} scenarios</span>
