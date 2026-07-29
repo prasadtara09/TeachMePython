@@ -41,4 +41,6 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
-/.openai
+
+# OpenAI Sites local hosting metadata
+/.openai/
