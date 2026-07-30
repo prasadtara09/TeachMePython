@@ -18,6 +18,20 @@ export type Scenario = {
   output: string;
 };
 
+export type Capstone = {
+  id: string;
+  title: string;
+  role: string;
+  incident: string;
+  mission: string;
+  skills: string[];
+  deliverables: string[];
+  stages: Array<{ title: string; details: string }>;
+  acceptance: string[];
+  solution: string;
+  result: string;
+};
+
 export type Chapter = {
   id: string;
   number: string;
@@ -27,6 +41,7 @@ export type Chapter = {
   tools: string[];
   units: TeachingUnit[];
   scenarios: Scenario[];
+  capstones: Capstone[];
 };
 
 type ScenarioSeed = Omit<Scenario, "id" | "situation"> & {
@@ -758,6 +773,463 @@ function compactUnits(items: Array<[string, TeachingUnit["level"], string, strin
   return items.map(([title, level, concept, practical]) => ({ title, level, concept, practical }));
 }
 
+const capstonesByChapter: Record<string, Capstone[]> = {
+  "python-mastery": [
+    {
+      id: "python-deployment-gate",
+      title: "Build a production deployment readiness gate",
+      role: "Platform engineer supporting a high-traffic checkout service",
+      incident: "A release reached production with a missing environment variable and an unhealthy dependency. The deployment completed, but checkout failed for 18 minutes.",
+      mission: "Create a Python CLI that validates configuration, checks service health concurrently, produces a JSON evidence report, and exits with a CI-friendly status code.",
+      skills: ["argparse CLI", "dataclasses", "asyncio", "JSON reports", "logging", "exit codes", "unit tests"],
+      deliverables: [
+        "A validate-release command with --config, --environment, and --dry-run options",
+        "Typed validation results for configuration, endpoints, and artifact metadata",
+        "A machine-readable report that CI can retain as evidence",
+        "Unit tests for success, timeout, malformed configuration, and partial failure",
+      ],
+      stages: [
+        { title: "Model the gate", details: "Create dataclasses for checks and the final decision. Load required values from JSON and environment variables." },
+        { title: "Run safe checks", details: "Execute independent health probes concurrently, apply timeouts, and collect every failure instead of stopping at the first one." },
+        { title: "Integrate with CI", details: "Write the evidence report, log the decision, and return exit code 0 only when every mandatory check passes." },
+      ],
+      acceptance: [
+        "Repeated dry-runs do not change any service",
+        "Secrets are never printed in logs or reports",
+        "A failed mandatory check produces a non-zero exit code",
+        "Tests run without contacting real production endpoints",
+      ],
+      solution: `import argparse, asyncio, json, sys
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+@dataclass
+class Check:
+    name: str
+    passed: bool
+    detail: str
+
+async def probe(name: str, healthy: bool) -> Check:
+    await asyncio.sleep(0.05)
+    return Check(name, healthy, "healthy" if healthy else "unavailable")
+
+async def main(config_path: str) -> int:
+    config = json.loads(Path(config_path).read_text(encoding="utf-8"))
+    checks = await asyncio.gather(
+        probe("api", config.get("api_healthy", False)),
+        probe("database", config.get("database_healthy", False)),
+    )
+    Path("readiness.json").write_text(
+        json.dumps([asdict(check) for check in checks], indent=2),
+        encoding="utf-8",
+    )
+    return 0 if all(check.passed for check in checks) else 2
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--config", required=True)
+args = parser.parse_args()
+sys.exit(asyncio.run(main(args.config)))`,
+      result: "CI receives a repeatable pass/fail decision and a readiness.json evidence artifact before any production deployment begins.",
+    },
+    {
+      id: "python-incident-correlator",
+      title: "Create an SRE incident log correlator",
+      role: "On-call SRE investigating intermittent API latency",
+      incident: "Errors are spread across gateway, application, and worker logs. Manual searches take too long and timestamps use different formats.",
+      mission: "Build a memory-efficient Python tool that streams multiple logs, normalizes events, groups related request IDs, and generates an incident timeline.",
+      skills: ["pathlib", "generators", "regular expressions", "datetime", "collections", "CSV/JSON", "testing"],
+      deliverables: [
+        "Recursive log discovery with include and exclude patterns",
+        "A generator-based parser that handles malformed lines safely",
+        "Request-ID correlation and a time-ordered incident timeline",
+        "JSON summary plus CSV evidence for the post-incident review",
+      ],
+      stages: [
+        { title: "Stream events", details: "Discover log files and yield one normalized event at a time so multi-gigabyte logs do not fill memory." },
+        { title: "Correlate symptoms", details: "Normalize UTC timestamps, group by request ID, and calculate error counts and slowest operations." },
+        { title: "Produce evidence", details: "Write a concise incident summary, retain source filenames, and test with representative log fixtures." },
+      ],
+      acceptance: [
+        "Processes large files without loading them completely",
+        "Malformed lines are counted and skipped, not fatal",
+        "Events are ordered using timezone-aware timestamps",
+        "The report identifies the first failure and affected request IDs",
+      ],
+      solution: `import json
+from collections import defaultdict
+from pathlib import Path
+
+def error_events(root: Path):
+    for path in root.rglob("*.log"):
+        with path.open(encoding="utf-8") as stream:
+            for line in stream:
+                if "ERROR" in line:
+                    timestamp, request_id, message = line.strip().split("|", 2)
+                    yield {
+                        "timestamp": timestamp,
+                        "request_id": request_id,
+                        "message": message,
+                        "source": str(path),
+                    }
+
+def correlate(root: Path) -> dict:
+    grouped = defaultdict(list)
+    for event in error_events(root):
+        grouped[event["request_id"]].append(event)
+    return {key: sorted(events, key=lambda item: item["timestamp"])
+            for key, events in grouped.items()}
+
+Path("incident.json").write_text(
+    json.dumps(correlate(Path("logs")), indent=2),
+    encoding="utf-8",
+)`,
+      result: "The on-call engineer receives a request-by-request failure timeline and can move from symptom to likely cause without manual log stitching.",
+    },
+  ],
+  "os-files": [
+    {
+      id: "os-config-safety",
+      title: "Build an atomic configuration backup and rollback tool",
+      role: "DevOps engineer maintaining configuration on a fleet of application hosts",
+      incident: "A partially written configuration file caused services to fail during a rolling restart.",
+      mission: "Create a cross-platform tool that validates configuration, creates timestamped backups, writes through a temporary file, and rolls back after failed verification.",
+      skills: ["pathlib", "shutil", "temporary files", "os.replace", "hashing", "JSON manifests"],
+      deliverables: ["Backup and apply commands", "SHA-256 manifest", "Atomic replacement workflow", "Rollback and retention policy"],
+      stages: [
+        { title: "Inventory and verify", details: "Resolve paths, verify the source exists, and calculate the current checksum before changing anything." },
+        { title: "Apply atomically", details: "Write the candidate to a sibling temporary file, validate it, then replace the target in one filesystem operation." },
+        { title: "Recover safely", details: "Restore the verified backup after a failed health check and record every action in a JSON manifest." },
+      ],
+      acceptance: ["No partial target file is observable", "Backups preserve metadata", "Rollback verifies the backup checksum", "Repeated runs enforce the same retention limit"],
+      solution: `import hashlib, json, os, shutil
+from pathlib import Path
+
+def digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+def apply_config(candidate: Path, target: Path) -> dict:
+    backup = target.with_suffix(target.suffix + ".bak")
+    temp = target.with_suffix(target.suffix + ".tmp")
+    if target.exists():
+        shutil.copy2(target, backup)
+    shutil.copy2(candidate, temp)
+    os.replace(temp, target)
+    manifest = {"target": str(target), "sha256": digest(target)}
+    Path("config-change.json").write_text(json.dumps(manifest, indent=2))
+    return manifest`,
+      result: "Configuration changes become atomic, auditable, and recoverable without leaving corrupted files behind.",
+    },
+    {
+      id: "os-artifact-retention",
+      title: "Create a build-artifact integrity and retention pipeline",
+      role: "Release engineer managing artifacts produced by multiple CI pipelines",
+      incident: "Disk usage reached 100%, while the only known-good rollback artifact had an unverified checksum.",
+      mission: "Discover artifacts, verify checksums, archive approved releases, and remove only expired unprotected files in dry-run-first mode.",
+      skills: ["file discovery", "metadata", "zipfile", "hashlib", "CSV reporting", "safe deletion"],
+      deliverables: ["Artifact inventory report", "Integrity verification", "Compressed release bundle", "Dry-run retention cleanup"],
+      stages: [
+        { title: "Build inventory", details: "Collect path, size, modification time, release label, and SHA-256 for every artifact." },
+        { title: "Protect releases", details: "Archive approved artifacts and write a manifest inside the bundle." },
+        { title: "Apply retention", details: "Preview expired candidates, exclude protected releases, and delete only after explicit apply mode." },
+      ],
+      acceptance: ["Dry-run is the default", "Protected releases are never selected", "Every archive has a checksum manifest", "Cleanup reports reclaimed bytes"],
+      solution: `import hashlib
+from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
+
+def checksum(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+def archive_release(files: list[Path], destination: Path) -> None:
+    with ZipFile(destination, "w", ZIP_DEFLATED) as archive:
+        for path in files:
+            archive.write(path, arcname=path.name)
+        manifest = "\\n".join(f"{checksum(path)}  {path.name}" for path in files)
+        archive.writestr("SHA256SUMS", manifest)
+
+artifacts = list(Path("artifacts").glob("*.tar.gz"))
+archive_release(artifacts, Path("release-bundle.zip"))`,
+      result: "Release storage stays within policy while every retained rollback artifact has verifiable integrity evidence.",
+    },
+  ],
+  "linux-automation": [
+    {
+      id: "linux-self-healing",
+      title: "Build a systemd service health and self-healing agent",
+      role: "Linux SRE responsible for a customer-facing API service",
+      incident: "The API process remained active but stopped serving traffic; systemd alone did not detect the application failure.",
+      mission: "Implement a guarded health agent that checks systemd and HTTP health, gathers diagnostics, and performs a rate-limited restart with audit logs.",
+      skills: ["subprocess", "systemd", "timeouts", "signals", "journald", "rate limiting", "dry-run"],
+      deliverables: ["Service and endpoint checks", "Diagnostic bundle", "Guarded restart policy", "Structured audit log and exit codes"],
+      stages: [
+        { title: "Measure health", details: "Run systemctl with argument lists and timeouts, then compare process state with the application endpoint." },
+        { title: "Capture evidence", details: "Save recent journal entries, process information, disk usage, and load before remediation." },
+        { title: "Remediate safely", details: "Enforce cooldown and restart limits, support dry-run, restart once, and verify recovery." },
+      ],
+      acceptance: ["No shell=True command execution", "Every command has a timeout", "Restart storms are prevented", "Failure evidence is captured before restart"],
+      solution: `import subprocess
+from datetime import datetime, timezone
+
+def command(args: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(args, capture_output=True, text=True, timeout=10)
+
+def service_active(name: str) -> bool:
+    return command(["systemctl", "is-active", "--quiet", name]).returncode == 0
+
+def recover(name: str, dry_run: bool = True) -> bool:
+    if service_active(name):
+        return True
+    if dry_run:
+        print(f"would restart {name}")
+        return False
+    result = command(["systemctl", "restart", name])
+    print(datetime.now(timezone.utc).isoformat(), name, result.returncode)
+    return result.returncode == 0 and service_active(name)`,
+      result: "The agent repairs a verified service failure once, preserves diagnostic evidence, and avoids unsafe restart loops.",
+    },
+    {
+      id: "linux-triage-bundle",
+      title: "Generate an automated Linux incident triage bundle",
+      role: "On-call engineer responding to high load and disk alerts",
+      incident: "Engineers spent the first 20 minutes of incidents manually collecting the same host evidence.",
+      mission: "Create a non-destructive collector for CPU, memory, disk, processes, open ports, service state, and bounded log excerpts.",
+      skills: ["subprocess", "shutil.disk_usage", "streaming logs", "permissions", "tar archives", "redaction"],
+      deliverables: ["Modular collectors", "Timeout and error isolation", "Secret redaction", "Compressed timestamped support bundle"],
+      stages: [
+        { title: "Collect bounded evidence", details: "Run allow-listed read-only commands and cap both execution time and output size." },
+        { title: "Redact sensitive data", details: "Remove tokens, passwords, and environment secrets before saving evidence." },
+        { title: "Package and summarize", details: "Create a compressed bundle with a top-level health summary and per-collector errors." },
+      ],
+      acceptance: ["Collectors never modify the host", "One failed command does not stop the bundle", "Secrets are redacted", "Bundle creation completes within a defined timeout"],
+      solution: `import json, shutil, subprocess
+from pathlib import Path
+
+COMMANDS = {
+    "uptime": ["uptime"],
+    "processes": ["ps", "-eo", "pid,comm,%cpu,%mem", "--sort=-%cpu"],
+    "failed_services": ["systemctl", "--failed", "--no-pager"],
+}
+
+def collect() -> dict:
+    report = {}
+    for name, args in COMMANDS.items():
+        result = subprocess.run(args, capture_output=True, text=True, timeout=10)
+        report[name] = {"code": result.returncode, "output": result.stdout[:20000]}
+    total, used, free = shutil.disk_usage("/")
+    report["disk"] = {"total": total, "used": used, "free": free}
+    return report
+
+Path("triage.json").write_text(json.dumps(collect(), indent=2))`,
+      result: "The responder receives consistent evidence in seconds and can focus immediately on diagnosis rather than manual collection.",
+    },
+  ],
+  "aws-boto3": [
+    {
+      id: "aws-multi-account-inventory",
+      title: "Build a multi-account AWS compliance inventory",
+      role: "Cloud platform engineer responsible for development and production accounts",
+      incident: "An internet-facing instance and unencrypted bucket were discovered during an audit, but the central inventory was incomplete.",
+      mission: "Use boto3 to assume read-only roles, paginate EC2 and S3 inventory, evaluate compliance rules, and publish account-level evidence.",
+      skills: ["boto3 Session", "STS AssumeRole", "paginators", "EC2/S3 APIs", "tags", "retry configuration", "CSV/JSON"],
+      deliverables: ["Cross-account role session factory", "Paginated inventory collectors", "Compliance rule engine", "Consolidated evidence report"],
+      stages: [
+        { title: "Assume least privilege", details: "Use STS temporary credentials and verify the active account with GetCallerIdentity." },
+        { title: "Collect everything", details: "Use regional iteration and paginators so large accounts are not truncated." },
+        { title: "Evaluate and report", details: "Flag missing ownership tags, public exposure, and encryption gaps without changing resources." },
+      ],
+      acceptance: ["No long-lived access keys", "Every API list is fully paginated", "AccessDenied is isolated per account", "Reports include account, region, ARN, rule, and evidence"],
+      solution: `import boto3
+
+def assumed_session(role_arn: str) -> boto3.Session:
+    response = boto3.client("sts").assume_role(
+        RoleArn=role_arn,
+        RoleSessionName="central-inventory",
+    )
+    keys = response["Credentials"]
+    return boto3.Session(
+        aws_access_key_id=keys["AccessKeyId"],
+        aws_secret_access_key=keys["SecretAccessKey"],
+        aws_session_token=keys["SessionToken"],
+    )
+
+def instances(session: boto3.Session, region: str):
+    ec2 = session.client("ec2", region_name=region)
+    paginator = ec2.get_paginator("describe_instances")
+    for page in paginator.paginate():
+        for reservation in page["Reservations"]:
+            yield from reservation["Instances"]`,
+      result: "Security and platform teams receive a complete, repeatable inventory with actionable compliance evidence across every approved AWS account.",
+    },
+    {
+      id: "aws-alarm-remediator",
+      title: "Create a guarded AWS alarm remediation workflow",
+      role: "SRE automating repetitive recovery for an EC2 worker fleet",
+      incident: "A runbook required manual instance recovery during off-hours, increasing mean time to recovery.",
+      mission: "Consume an alarm event, validate resource tags and state, gather CloudWatch evidence, execute an allow-listed boto3 action, and verify recovery.",
+      skills: ["boto3 clients", "CloudWatch", "EC2 waiters", "idempotency", "dry-run", "SNS/EventBridge", "audit records"],
+      deliverables: ["Event validation", "Eligibility policy", "Dry-run remediation", "Waiter-based verification and notification"],
+      stages: [
+        { title: "Validate the event", details: "Reject malformed, stale, duplicate, or unsupported alarms before looking up the resource." },
+        { title: "Enforce guardrails", details: "Require opt-in tags, allowed environments, a cooldown window, and a supported current state." },
+        { title: "Act and verify", details: "Record evidence, perform one approved action, wait for the desired state, and publish the outcome." },
+      ],
+      acceptance: ["Dry-run produces the full decision without mutation", "Only tagged resources are eligible", "Duplicate events are idempotent", "Every action records before/after state"],
+      solution: `import boto3
+
+ec2 = boto3.client("ec2", region_name="ap-south-1")
+
+def restart_instance(instance_id: str, dry_run: bool = True) -> str:
+    response = ec2.describe_instances(InstanceIds=[instance_id])
+    instance = response["Reservations"][0]["Instances"][0]
+    tags = {tag["Key"]: tag["Value"] for tag in instance.get("Tags", [])}
+    if tags.get("AutoRemediate") != "true":
+        return "skipped: resource has not opted in"
+    if dry_run:
+        return f"would reboot {instance_id}"
+    ec2.reboot_instances(InstanceIds=[instance_id])
+    waiter = ec2.get_waiter("instance_status_ok")
+    waiter.wait(InstanceIds=[instance_id])
+    return "recovered"`,
+      result: "Eligible alarms trigger a bounded, auditable recovery while unapproved resources remain untouched.",
+    },
+  ],
+  "azure-sdk": [
+    {
+      id: "azure-compliance-inventory",
+      title: "Build an Azure VM and Storage compliance inventory",
+      role: "Azure platform engineer supporting multiple subscriptions",
+      incident: "Unmanaged disks and public storage settings were found after teams bypassed the standard provisioning path.",
+      mission: "Authenticate with DefaultAzureCredential, inventory subscriptions, VMs, disks, and storage, then evaluate tagging, encryption, and exposure rules.",
+      skills: ["DefaultAzureCredential", "management clients", "Azure Resource Graph", "paging", "typed exceptions", "CSV/JSON"],
+      deliverables: ["Subscription-aware client factory", "Paged resource inventory", "Compliance findings", "Management-ready summary"],
+      stages: [
+        { title: "Use the identity chain", details: "Run locally with Azure CLI identity and in Azure with managed identity without changing code." },
+        { title: "Normalize resources", details: "Collect IDs, regions, tags, power state, disk configuration, and storage network settings." },
+        { title: "Evaluate policy", details: "Generate evidence for missing owner tags, public access, and encryption or backup gaps." },
+      ],
+      acceptance: ["No credentials in source", "All subscriptions are identified in output", "Authorization failures do not hide other subscriptions", "Findings link policy to resource evidence"],
+      solution: `from azure.identity import DefaultAzureCredential
+from azure.mgmt.compute import ComputeManagementClient
+
+def inventory(subscription_id: str) -> list[dict]:
+    credential = DefaultAzureCredential()
+    compute = ComputeManagementClient(credential, subscription_id)
+    records = []
+    for vm in compute.virtual_machines.list_all():
+        records.append({
+            "id": vm.id,
+            "name": vm.name,
+            "location": vm.location,
+            "owner": (vm.tags or {}).get("owner", "missing"),
+            "compliant": "owner" in (vm.tags or {}),
+        })
+    return records`,
+      result: "Cloud owners receive a subscription-wide resource register and evidence-based compliance backlog without hard-coded credentials.",
+    },
+    {
+      id: "azure-monitor-remediation",
+      title: "Create an Azure Monitor incident remediation runner",
+      role: "SRE operating a VM-backed business application",
+      incident: "A memory-pressure alert required repeated manual checks, VM restart approval, and post-recovery validation.",
+      mission: "Turn an Azure Monitor alert into a guarded runbook that queries metrics, validates tags, starts or restarts a VM through a poller, and verifies health.",
+      skills: ["Azure Monitor", "ComputeManagementClient", "pollers", "managed identity", "Key Vault", "audit logging"],
+      deliverables: ["Alert parser", "Metric evidence query", "Eligibility guardrails", "Long-running operation handling and audit result"],
+      stages: [
+        { title: "Enrich the alert", details: "Resolve the resource ID, query recent metrics, and record the threshold window." },
+        { title: "Make a safe decision", details: "Require remediation tags, supported environment, approval state, and a cooldown." },
+        { title: "Execute and verify", details: "Start the SDK operation, wait on the poller, probe application health, and record the final outcome." },
+      ],
+      acceptance: ["Managed identity is used in Azure", "A dry-run path is available", "Poller failures are surfaced", "Audit data contains alert, decision, action, and verification"],
+      solution: `from azure.identity import DefaultAzureCredential
+from azure.mgmt.compute import ComputeManagementClient
+
+credential = DefaultAzureCredential()
+
+def start_vm(subscription_id: str, group: str, vm_name: str, dry_run=True):
+    if dry_run:
+        return f"would start {group}/{vm_name}"
+    compute = ComputeManagementClient(credential, subscription_id)
+    poller = compute.virtual_machines.begin_start(group, vm_name)
+    poller.result()
+    return f"started {group}/{vm_name}"`,
+      result: "The alert follows a controlled, identity-safe remediation path with metric evidence and verified recovery.",
+    },
+  ],
+  production: [
+    {
+      id: "production-canary-orchestrator",
+      title: "Build a canary deployment and automatic rollback orchestrator",
+      role: "Release SRE deploying a critical API across multiple environments",
+      incident: "A deployment passed infrastructure checks but increased error rate after full rollout, requiring a manual rollback.",
+      mission: "Create a provider-neutral Python orchestrator that validates artifacts, deploys a canary, evaluates SLO signals, promotes gradually, and rolls back safely.",
+      skills: ["state machines", "interfaces", "structured logging", "metrics", "timeouts", "rollback", "unit tests"],
+      deliverables: ["Deployment state model", "Canary stages", "SLO decision engine", "Idempotent rollback and audit trail"],
+      stages: [
+        { title: "Define desired state", details: "Represent version, environment, traffic percentage, approvals, and rollback target explicitly." },
+        { title: "Evaluate the canary", details: "Compare error rate, latency, saturation, and minimum sample size against policy at each stage." },
+        { title: "Promote or restore", details: "Advance traffic only after a passing window; otherwise restore the previous version and verify it." },
+      ],
+      acceptance: ["Re-running a completed stage is safe", "Insufficient metric samples cannot pass", "Rollback is tested and observable", "Every transition has actor, timestamp, reason, and evidence"],
+      solution: `from dataclasses import dataclass
+
+@dataclass
+class Signals:
+    error_rate: float
+    p95_ms: float
+    samples: int
+
+def can_promote(signals: Signals) -> bool:
+    return (
+        signals.samples >= 1000
+        and signals.error_rate < 0.01
+        and signals.p95_ms < 400
+    )
+
+def deploy(provider, version: str, previous: str, signals: Signals) -> str:
+    provider.set_traffic(version, 10)
+    if not can_promote(signals):
+        provider.rollback(previous)
+        return "rolled back"
+    provider.set_traffic(version, 100)
+    return "promoted"`,
+      result: "Releases advance only when real service signals pass policy, and failures restore the known-good version automatically.",
+    },
+    {
+      id: "production-slo-automation",
+      title: "Create an SLO and error-budget operations service",
+      role: "Reliability engineer standardizing operational decisions across service teams",
+      incident: "Teams continued risky releases while reliability was below target because SLO data was reviewed manually once a week.",
+      mission: "Build a scheduled Python service that collects SLI data, calculates rolling SLOs and burn rates, opens actionable alerts, and generates audit-ready reports.",
+      skills: ["clean architecture", "concurrency", "retries", "time windows", "structured data", "testing", "CI/CD"],
+      deliverables: ["Provider adapters", "SLO calculation engine", "Multi-window burn-rate alerts", "Daily report and release-policy output"],
+      stages: [
+        { title: "Model reliability", details: "Define service, objective, window, good events, total events, and missing-data policy." },
+        { title: "Calculate burn", details: "Compute compliance and short/long-window burn rates with deterministic time boundaries." },
+        { title: "Drive operations", details: "Emit alerts with evidence, recommend release freeze or proceed, and retain a daily audit report." },
+      ],
+      acceptance: ["Calculations have unit tests with fixed timestamps", "Missing data is visible and cannot silently pass", "Alerts are deduplicated", "Provider failures retry with limits and preserve partial results"],
+      solution: `from dataclasses import dataclass
+
+@dataclass
+class Window:
+    good: int
+    total: int
+
+def availability(window: Window) -> float:
+    return window.good / window.total if window.total else 0.0
+
+def burn_rate(window: Window, objective: float) -> float:
+    allowed_bad = 1 - objective
+    observed_bad = 1 - availability(window)
+    return observed_bad / allowed_bad
+
+def release_allowed(window: Window, objective: float = 0.999) -> bool:
+    return window.total > 0 and burn_rate(window, objective) < 1.0`,
+      result: "Reliability data becomes a daily automated release signal, allowing teams to protect the error budget before customer impact grows.",
+    },
+  ],
+};
+
 export const chapters: Chapter[] = [
   {
     id: "python-mastery",
@@ -768,6 +1240,7 @@ export const chapters: Chapter[] = [
     tools: ["Python 3", "stdlib", "asyncio", "argparse", "unittest"],
     units: pythonUnits,
     scenarios: expand("python", pythonSeeds),
+    capstones: capstonesByChapter["python-mastery"],
   },
   {
     id: "os-files",
@@ -785,6 +1258,7 @@ export const chapters: Chapter[] = [
       ["Reliable update patterns", "Advanced", "Use temporary files and atomic replacement to avoid corruption.", `temp.write_text(content)\nos.replace(temp, target)`],
     ]),
     scenarios: expand("os", osSeeds),
+    capstones: capstonesByChapter["os-files"],
   },
   {
     id: "linux-automation",
@@ -802,6 +1276,7 @@ export const chapters: Chapter[] = [
       ["Idempotent maintenance", "Advanced", "Make repeated runs produce the same safe result.", `if stale.exists():\n    stale.unlink()`],
     ]),
     scenarios: expand("linux", linuxSeeds),
+    capstones: capstonesByChapter["linux-automation"],
   },
   {
     id: "aws-boto3",
@@ -819,6 +1294,7 @@ export const chapters: Chapter[] = [
       ["Cross-account automation", "Advanced", "Assume least-privilege roles and build temporary sessions.", `response = sts.assume_role(RoleArn=role, RoleSessionName="inventory")`],
     ]),
     scenarios: expand("aws", awsSeeds),
+    capstones: capstonesByChapter["aws-boto3"],
   },
   {
     id: "azure-sdk",
@@ -836,6 +1312,7 @@ export const chapters: Chapter[] = [
       ["Async SDK clients", "Advanced", "Scale I/O-heavy Azure inventory with aio clients.", `async with BlobServiceClient(url, credential=credential) as client:`],
     ]),
     scenarios: expand("azure", azureSeeds),
+    capstones: capstonesByChapter["azure-sdk"],
   },
   {
     id: "production",
@@ -853,6 +1330,7 @@ export const chapters: Chapter[] = [
       ["Idempotency and rollback", "Advanced", "Detect desired state and restore the previous state on failure.", `if current != desired:\n    apply(desired)`],
     ]),
     scenarios: expand("production", productionSeeds),
+    capstones: capstonesByChapter.production,
   },
 ];
 

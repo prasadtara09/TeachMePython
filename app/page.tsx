@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { chapters, totalScenarios, type Chapter, type Scenario } from "./course-data";
 
-type Mode = "learn" | "practice";
+type Mode = "learn" | "practice" | "capstone";
 
 function normalize(value: string) {
   return value.replaceAll("'", '"').replace(/\s+/g, " ").toLowerCase();
@@ -86,6 +86,7 @@ export default function Home() {
   const [chapterId, setChapterId] = useState(chapters[0].id);
   const [mode, setMode] = useState<Mode>("learn");
   const [scenarioIndex, setScenarioIndex] = useState(0);
+  const [capstoneIndex, setCapstoneIndex] = useState(0);
   const [code, setCode] = useState(chapters[0].scenarios[0].starter);
   const [output, setOutput] = useState("Ready. Complete the scenario, then run your solution.");
   // Progress is intentionally kept only in memory. Refreshing the page or
@@ -112,6 +113,7 @@ export default function Home() {
     setChapterId(nextChapter.id);
     setMode("learn");
     setScenarioIndex(0);
+    setCapstoneIndex(0);
     setOpenUnit(0);
     setCode(nextChapter.scenarios[0].starter);
     setOutput("Ready. Complete the scenario, then run your solution.");
@@ -197,8 +199,8 @@ export default function Home() {
       <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
         <div className="sidebar-intro">
           <p className="eyebrow">ZERO TO AUTOMATION ENGINEER</p>
-          <h2>6 chapters · 300 scenarios</h2>
-          <p>Learn the concept. Study the practical. Solve the incident.</p>
+          <h2>6 chapters · 300 scenarios · 12 capstones</h2>
+          <p>Learn the concept. Solve the incident. Build the production project.</p>
         </div>
 
         <nav className="chapter-list" aria-label="Course chapters">
@@ -281,6 +283,14 @@ export default function Home() {
           >
             <span>02</span> Scenario bank <b>50</b>
           </button>
+          <button
+            role="tab"
+            aria-selected={mode === "capstone"}
+            className={mode === "capstone" ? "active" : ""}
+            onClick={() => setMode("capstone")}
+          >
+            <span>03</span> DevOps/SRE capstones <b>2</b>
+          </button>
         </div>
 
         {mode === "learn" ? (
@@ -290,7 +300,7 @@ export default function Home() {
             setOpenUnit={setOpenUnit}
             begin={() => openScenario(0)}
           />
-        ) : (
+        ) : mode === "practice" ? (
           <PracticeView
             chapter={chapter}
             scenario={scenario}
@@ -307,6 +317,12 @@ export default function Home() {
             setShowSolution={setShowSolution}
             runChallenge={runChallenge}
             openScenario={openScenario}
+          />
+        ) : (
+          <CapstoneView
+            chapter={chapter}
+            capstoneIndex={capstoneIndex}
+            setCapstoneIndex={setCapstoneIndex}
           />
         )}
       </section>
@@ -374,6 +390,128 @@ function LearnView({
           </article>
         ))}
       </div>
+    </div>
+  );
+}
+
+function CapstoneView({
+  chapter,
+  capstoneIndex,
+  setCapstoneIndex,
+}: {
+  chapter: Chapter;
+  capstoneIndex: number;
+  setCapstoneIndex: (index: number) => void;
+}) {
+  const project = chapter.capstones[capstoneIndex] ?? chapter.capstones[0];
+  const functionNotes = explainFunctions(project.solution);
+
+  return (
+    <div className="capstone-layout">
+      <aside className="capstone-menu">
+        <p className="eyebrow">REAL-TIME PROJECT LAB</p>
+        <h2>Operate like the on-call engineer</h2>
+        <p>
+          Build each project as a small production repository. Start with the
+          incident, implement the stages, test the failure paths, and use the
+          acceptance criteria as your final review.
+        </p>
+        <div className="capstone-picker" aria-label="Select a capstone project">
+          {chapter.capstones.map((item, index) => (
+            <button
+              key={item.id}
+              className={capstoneIndex === index ? "active" : ""}
+              onClick={() => setCapstoneIndex(index)}
+            >
+              <span>PROJECT {index + 1}</span>
+              <b>{item.title}</b>
+            </button>
+          ))}
+        </div>
+      </aside>
+
+      <article className="capstone-project">
+        <div className="capstone-heading">
+          <div>
+            <p className="eyebrow">CAPSTONE {capstoneIndex + 1} · ADVANCED</p>
+            <h2>{project.title}</h2>
+          </div>
+          <span>{chapter.track}</span>
+        </div>
+
+        <section className="capstone-incident">
+          <div>
+            <small>YOUR ROLE</small>
+            <p>{project.role}</p>
+          </div>
+          <div>
+            <small>PRODUCTION INCIDENT</small>
+            <p>{project.incident}</p>
+          </div>
+        </section>
+
+        <section className="capstone-section">
+          <p className="eyebrow">THE MISSION</p>
+          <h3>{project.mission}</h3>
+          <div className="capstone-skills">
+            {project.skills.map((skill) => <span key={skill}>{skill}</span>)}
+          </div>
+        </section>
+
+        <section className="capstone-section">
+          <p className="eyebrow">DELIVERABLES</p>
+          <ul className="capstone-checklist">
+            {project.deliverables.map((deliverable) => (
+              <li key={deliverable}>{deliverable}</li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="capstone-section">
+          <p className="eyebrow">IMPLEMENTATION PLAN</p>
+          <div className="capstone-stages">
+            {project.stages.map((stage, index) => (
+              <div key={stage.title}>
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <div>
+                  <h4>{stage.title}</h4>
+                  <p>{stage.details}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="capstone-section">
+          <p className="eyebrow">DEFINITION OF DONE</p>
+          <ul className="acceptance-list">
+            {project.acceptance.map((item) => <li key={item}>{item}</li>)}
+          </ul>
+        </section>
+
+        <section className="capstone-reference">
+          <p className="eyebrow">REFERENCE BLUEPRINT</p>
+          <pre>{project.solution}</pre>
+          <div className="explanation-block">
+            <h4>What each function does</h4>
+            <dl>
+              {functionNotes.map((note) => (
+                <div key={note.name}>
+                  <dt>{note.name}</dt>
+                  <dd>{note.description}</dd>
+                </div>
+              ))}
+            </dl>
+            <h4>How this result is achieved</h4>
+            <p>
+              The blueprint separates collection, decision, action, and
+              verification so each failure can be tested safely. Completing the
+              deliverables and acceptance checks produces this operational result:
+              <code>{project.result}</code>
+            </p>
+          </div>
+        </section>
+      </article>
     </div>
   );
 }
