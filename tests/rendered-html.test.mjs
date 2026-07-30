@@ -69,6 +69,13 @@ test("defines seven complete capstones and 100 scenarios for every chapter", asy
   assert.match(page, /function CapstoneView/);
   assert.match(page, /What each function does/);
   assert.match(page, /How this result is achieved/);
+  assert.match(page, /function describeLearningResult/);
+  assert.match(page, /STEP-BY-STEP/);
+  assert.match(page, /Run → change → harden/);
+  assert.match(page, /Open \{chapter\.capstones\.length\} capstones/);
   assert.match(css, /\.capstone-layout/);
+  assert.match(css, /\.learning-summary/);
+  assert.match(css, /\.learning-explanation/);
+  assert.match(css, /\.practice-mission/);
   assert.doesNotMatch(page, /localStorage|sessionStorage|indexedDB/);
 });

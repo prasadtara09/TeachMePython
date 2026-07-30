@@ -88,6 +88,32 @@ function explainFunctions(solution: string): FunctionNote[] {
       }];
 }
 
+function describeLearningResult(unit: Chapter["units"][number]): string {
+  const source = normalize(unit.practical);
+  if (source.includes("print(")) {
+    return "Python evaluates the variables and expressions first, then print() sends the formatted operational result to the terminal.";
+  }
+  if (source.includes("return ")) {
+    return "The function receives the supplied input, applies the decision or transformation, and returns a reusable result to its caller.";
+  }
+  if (source.includes("path(") || source.includes(".rglob(")) {
+    return "The pathlib objects resolve and inspect filesystem locations without hard-coded string concatenation, producing portable path data.";
+  }
+  if (source.includes("subprocess.run(")) {
+    return "The command is passed as a safe argument list, Python waits for the bounded operation, and the result exposes its status and output.";
+  }
+  if (source.includes("boto3") || source.includes("client(")) {
+    return "The SDK builds an authenticated service client from the active identity chain, then the requested API operation returns structured resource data.";
+  }
+  if (source.includes("azure") || source.includes("defaultazurecredential(")) {
+    return "Azure's credential chain supplies an approved identity, and the SDK client uses it to read or operate on the requested resource.";
+  }
+  if (source.includes("asyncio") || source.includes("await ")) {
+    return "The coroutine yields while I/O is waiting, allowing other operations to progress before their results are collected together.";
+  }
+  return `The pattern applies the ${unit.title.toLowerCase()} concept to operational input and produces a reusable building block for later scenarios.`;
+}
+
 export default function Home() {
   const [chapterId, setChapterId] = useState(chapters[0].id);
   const [mode, setMode] = useState<Mode>("learn");
@@ -310,7 +336,8 @@ export default function Home() {
             chapter={chapter}
             openUnit={openUnit}
             setOpenUnit={setOpenUnit}
-            begin={() => openScenario(0)}
+            beginScenarios={() => openScenario(0)}
+            beginCapstones={() => setMode("capstone")}
           />
         ) : mode === "practice" ? (
           <PracticeView
@@ -346,12 +373,14 @@ function LearnView({
   chapter,
   openUnit,
   setOpenUnit,
-  begin,
+  beginScenarios,
+  beginCapstones,
 }: {
   chapter: Chapter;
   openUnit: number;
   setOpenUnit: (index: number) => void;
-  begin: () => void;
+  beginScenarios: () => void;
+  beginCapstones: () => void;
 }) {
   return (
     <div className="learn-layout">
@@ -363,44 +392,101 @@ function LearnView({
             : "Understand the tools before solving incidents."}
         </h2>
         <p>
-          Work through these practical units in order. Each concept includes a
-          small implementation pattern you can reuse in the scenario bank.
+          Work through these lessons in order. Every lesson now explains the
+          implementation steps, what each function does, how the result is
+          produced, and what to practise before entering the scenario bank.
         </p>
+        <div className="learning-summary">
+          <div><strong>{chapter.units.length}</strong><span>guided lessons</span></div>
+          <div><strong>{chapter.scenarios.length}</strong><span>unique scenarios</span></div>
+          <div><strong>{chapter.capstones.length}</strong><span>capstones</span></div>
+        </div>
         <div className="level-key">
           <span><i className="basic" /> Basic</span>
           <span><i className="intermediate" /> Intermediate</span>
           <span><i className="advanced" /> Advanced</span>
         </div>
-        <button className="primary-cta" onClick={begin}>
-          Start {chapter.scenarios.length} scenarios <span>→</span>
-        </button>
+        <div className="learning-actions">
+          <button className="primary-cta" onClick={beginScenarios}>
+            Start {chapter.scenarios.length} scenarios <span>→</span>
+          </button>
+          <button className="secondary-cta" onClick={beginCapstones}>
+            Open {chapter.capstones.length} capstones <span>→</span>
+          </button>
+        </div>
       </section>
 
       <div className="unit-list">
-        {chapter.units.map((unit, index) => (
-          <article
-            key={unit.title}
-            className={`unit-card ${openUnit === index ? "open" : ""}`}
-          >
-            <button onClick={() => setOpenUnit(index)}>
-              <span className={`unit-index ${unit.level.toLowerCase()}`}>
-                {String(index + 1).padStart(2, "0")}
-              </span>
-              <span>
-                <small>{unit.level}</small>
-                <b>{unit.title}</b>
-              </span>
-              <span className="unit-toggle">{openUnit === index ? "−" : "+"}</span>
-            </button>
-            {openUnit === index && (
-              <div className="unit-detail">
-                <p>{unit.concept}</p>
-                <div className="practical-label">PRACTICAL PATTERN</div>
-                <pre>{unit.practical}</pre>
-              </div>
-            )}
-          </article>
-        ))}
+        {chapter.units.map((unit, index) => {
+          const functionNotes = explainFunctions(unit.practical);
+          return (
+            <article
+              key={unit.title}
+              className={`unit-card ${openUnit === index ? "open" : ""}`}
+            >
+              <button
+                onClick={() => setOpenUnit(openUnit === index ? -1 : index)}
+                aria-expanded={openUnit === index}
+              >
+                <span className={`unit-index ${unit.level.toLowerCase()}`}>
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <span>
+                  <small>{unit.level} · LESSON {index + 1}</small>
+                  <b>{unit.title}</b>
+                </span>
+                <span className="unit-toggle">{openUnit === index ? "−" : "+"}</span>
+              </button>
+              {openUnit === index && (
+                <div className="unit-detail">
+                  <section className="lesson-concept">
+                    <div className="practical-label">WHAT YOU WILL LEARN</div>
+                    <p>{unit.concept}</p>
+                  </section>
+
+                  <section className="lesson-steps">
+                    <div className="practical-label">STEP-BY-STEP</div>
+                    <ol>
+                      <li><b>Understand the input.</b> Identify the resource, value, or operational state the pattern receives.</li>
+                      <li><b>Apply the Python operation.</b> Follow the practical pattern and keep one clear responsibility.</li>
+                      <li><b>Observe the result.</b> Run it, inspect the returned value or output, and change one input.</li>
+                      <li><b>Productionize it.</b> Add validation, logging, dry-run behavior, or a focused test.</li>
+                    </ol>
+                  </section>
+
+                  <div className="practical-label">PRACTICAL PATTERN</div>
+                  <pre>{unit.practical}</pre>
+
+                  <section className="learning-explanation">
+                    <h4>What each function does</h4>
+                    <dl>
+                      {functionNotes.map((note) => (
+                        <div key={note.name}>
+                          <dt>{note.name}</dt>
+                          <dd>{note.description}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    <h4>How this result is achieved</h4>
+                    <p>{describeLearningResult(unit)}</p>
+                  </section>
+
+                  <section className="practice-mission">
+                    <div>
+                      <span>YOUR PRACTICE</span>
+                      <b>Run → change → harden</b>
+                    </div>
+                    <ul>
+                      <li>Run the example and explain each line in your own words.</li>
+                      <li>Change the resource name, threshold, path, or input and predict the result.</li>
+                      <li>Add one production control, then compare it with the scenario-bank solution.</li>
+                    </ul>
+                  </section>
+                </div>
+              )}
+            </article>
+          );
+        })}
       </div>
     </div>
   );
