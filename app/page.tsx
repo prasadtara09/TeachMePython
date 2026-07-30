@@ -1,6 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import {
   chapters,
   totalCapstones,
@@ -650,6 +655,119 @@ function PracticeView({
   const isComplete = completed.includes(scenarioKey);
   const functionNotes = explainFunctions(scenario.solution);
 
+  function updateEditor(
+    editor: HTMLTextAreaElement,
+    nextCode: string,
+    selectionStart: number,
+    selectionEnd = selectionStart,
+  ) {
+    setCode(nextCode);
+    window.requestAnimationFrame(() => {
+      editor.focus();
+      editor.setSelectionRange(selectionStart, selectionEnd);
+    });
+  }
+
+  function handleEditorKeyDown(
+    event: ReactKeyboardEvent<HTMLTextAreaElement>,
+  ) {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      return;
+    }
+
+    const editor = event.currentTarget;
+    const start = editor.selectionStart;
+    const end = editor.selectionEnd;
+
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const lineStart = code.lastIndexOf("\n", start - 1) + 1;
+      const textBeforeCursor = code.slice(lineStart, start);
+      const currentIndent = textBeforeCursor.match(/^[\t ]*/)?.[0] ?? "";
+      const opensPythonBlock = /:\s*(?:#.*)?$/.test(textBeforeCursor);
+      const indentation = currentIndent + (opensPythonBlock ? "    " : "");
+      const insertion = `\n${indentation}`;
+      const nextCode = code.slice(0, start) + insertion + code.slice(end);
+      const nextCursor = start + insertion.length;
+      updateEditor(editor, nextCode, nextCursor);
+      return;
+    }
+
+    if (event.key !== "Tab") {
+      return;
+    }
+
+    event.preventDefault();
+    const selectedText = code.slice(start, end);
+    const hasMultipleLines = selectedText.includes("\n");
+
+    if (!hasMultipleLines && start === end) {
+      if (!event.shiftKey) {
+        const insertion = "    ";
+        const nextCode = code.slice(0, start) + insertion + code.slice(end);
+        updateEditor(editor, nextCode, start + insertion.length);
+        return;
+      }
+
+      const lineStart = code.lastIndexOf("\n", start - 1) + 1;
+      const lineText = code.slice(lineStart);
+      const removable = lineText.match(/^(?: {1,4}|\t)/)?.[0] ?? "";
+      if (removable) {
+        const nextCode =
+          code.slice(0, lineStart) +
+          code.slice(lineStart + removable.length);
+        updateEditor(
+          editor,
+          nextCode,
+          Math.max(lineStart, start - removable.length),
+        );
+      }
+      return;
+    }
+
+    const blockStart = code.lastIndexOf("\n", start - 1) + 1;
+    const selectionTouchesNextLine = end > start && code[end - 1] === "\n";
+    const searchFrom = selectionTouchesNextLine ? end - 1 : end;
+    const followingBreak = code.indexOf("\n", searchFrom);
+    const blockEnd = followingBreak === -1 ? code.length : followingBreak;
+    const block = code.slice(blockStart, blockEnd);
+    const lines = block.split("\n");
+
+    if (event.shiftKey) {
+      let removedBeforeStart = 0;
+      let removedTotal = 0;
+      const nextBlock = lines
+        .map((line, index) => {
+          const removable = line.match(/^(?: {1,4}|\t)/)?.[0] ?? "";
+          if (index === 0) {
+            removedBeforeStart = removable.length;
+          }
+          removedTotal += removable.length;
+          return line.slice(removable.length);
+        })
+        .join("\n");
+      const nextCode =
+        code.slice(0, blockStart) + nextBlock + code.slice(blockEnd);
+      updateEditor(
+        editor,
+        nextCode,
+        Math.max(blockStart, start - removedBeforeStart),
+        Math.max(blockStart, end - removedTotal),
+      );
+      return;
+    }
+
+    const nextBlock = lines.map((line) => `    ${line}`).join("\n");
+    const nextCode =
+      code.slice(0, blockStart) + nextBlock + code.slice(blockEnd);
+    updateEditor(
+      editor,
+      nextCode,
+      start + 4,
+      end + lines.length * 4,
+    );
+  }
+
   return (
     <div className="practice-shell">
       <aside className="question-map">
@@ -784,11 +902,12 @@ function PracticeView({
                 aria-label="Python code editor"
                 value={code}
                 onChange={(event) => setCode(event.target.value)}
+                onKeyDown={handleEditorKeyDown}
                 spellCheck={false}
               />
             </div>
             <div className="run-bar">
-              <span>⌘/Ctrl + Enter to run</span>
+              <span>Enter: auto-indent · Tab: 4 spaces · ⌘/Ctrl + Enter: run</span>
               <button onClick={runChallenge} disabled={running}>
                 <span>▶</span> {running ? "Running…" : "Run checks"}
               </button>

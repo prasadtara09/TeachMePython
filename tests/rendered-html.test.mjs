@@ -73,6 +73,10 @@ test("defines seven complete capstones and 100 scenarios for every chapter", asy
   assert.match(page, /STEP-BY-STEP/);
   assert.match(page, /Run → change → harden/);
   assert.match(page, /Open \{chapter\.capstones\.length\} capstones/);
+  assert.match(page, /function handleEditorKeyDown/);
+  assert.match(page, /opensPythonBlock/);
+  assert.match(page, /onKeyDown=\{handleEditorKeyDown\}/);
+  assert.match(page, /Enter: auto-indent · Tab: 4 spaces/);
   assert.match(css, /\.capstone-layout/);
   assert.match(css, /\.learning-summary/);
   assert.match(css, /\.learning-explanation/);
