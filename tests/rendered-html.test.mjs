@@ -49,6 +49,13 @@ test("defines two complete capstones for every chapter", async () => {
   assert.equal((courseData.match(/\n    capstones: capstonesByChapter/g) ?? []).length, 6);
   assert.match(courseData, /multi-account AWS compliance inventory/i);
   assert.match(courseData, /canary deployment and automatic rollback/i);
+  assert.match(courseData, /production Kubernetes platform/i);
+  assert.match(courseData, /internal developer platform/i);
+  assert.match(courseData, /multi-account cloud landing zone/i);
+  assert.doesNotMatch(
+    courseData,
+    /a data engineering team|a finance batch-processing service|an internal support platform/i,
+  );
   assert.match(page, /function CapstoneView/);
   assert.match(page, /What each function does/);
   assert.match(page, /How this result is achieved/);

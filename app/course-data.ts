@@ -49,11 +49,11 @@ type ScenarioSeed = Omit<Scenario, "id" | "situation"> & {
 };
 
 const contexts = [
-  "a production web platform",
-  "a data engineering team",
-  "a security operations group",
-  "a finance batch-processing service",
-  "an internal support platform",
+  "an SRE team operating a production Kubernetes platform",
+  "a platform engineering team managing an internal developer platform",
+  "a DevOps team maintaining a multi-account cloud landing zone",
+  "an on-call team supporting a highly available API platform",
+  "a release engineering team operating enterprise CI/CD pipelines",
 ];
 
 function expand(chapterId: string, seeds: ScenarioSeed[]): Scenario[] {
@@ -778,8 +778,8 @@ const capstonesByChapter: Record<string, Capstone[]> = {
     {
       id: "python-deployment-gate",
       title: "Build a production deployment readiness gate",
-      role: "Platform engineer supporting a high-traffic checkout service",
-      incident: "A release reached production with a missing environment variable and an unhealthy dependency. The deployment completed, but checkout failed for 18 minutes.",
+      role: "Platform engineer supporting a Kubernetes-based deployment platform",
+      incident: "A release reached production with a missing environment variable and an unhealthy dependency. The rollout completed, but the API platform failed readiness checks for 18 minutes.",
       mission: "Create a Python CLI that validates configuration, checks service health concurrently, produces a JSON evidence report, and exits with a CI-friendly status code.",
       skills: ["argparse CLI", "dataclasses", "asyncio", "JSON reports", "logging", "exit codes", "unit tests"],
       deliverables: [
@@ -922,7 +922,7 @@ def apply_config(candidate: Path, target: Path) -> dict:
     {
       id: "os-artifact-retention",
       title: "Create a build-artifact integrity and retention pipeline",
-      role: "Release engineer managing artifacts produced by multiple CI pipelines",
+      role: "DevOps platform engineer managing artifacts produced by enterprise CI pipelines",
       incident: "Disk usage reached 100%, while the only known-good rollback artifact had an unverified checksum.",
       mission: "Discover artifacts, verify checksums, archive approved releases, and remove only expired unprotected files in dry-run-first mode.",
       skills: ["file discovery", "metadata", "zipfile", "hashlib", "CSV reporting", "safe deletion"],
@@ -1129,7 +1129,7 @@ def inventory(subscription_id: str) -> list[dict]:
     {
       id: "azure-monitor-remediation",
       title: "Create an Azure Monitor incident remediation runner",
-      role: "SRE operating a VM-backed business application",
+      role: "SRE operating a VM-backed internal application platform",
       incident: "A memory-pressure alert required repeated manual checks, VM restart approval, and post-recovery validation.",
       mission: "Turn an Azure Monitor alert into a guarded runbook that queries metrics, validates tags, starts or restarts a VM through a poller, and verifies health.",
       skills: ["Azure Monitor", "ComputeManagementClient", "pollers", "managed identity", "Key Vault", "audit logging"],
