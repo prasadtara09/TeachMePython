@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { chapters, totalScenarios, type Chapter, type Scenario } from "./course-data";
+import {
+  chapters,
+  totalCapstones,
+  totalScenarios,
+  type Chapter,
+  type Scenario,
+} from "./course-data";
 
 type Mode = "learn" | "practice" | "capstone";
 
@@ -199,7 +205,7 @@ export default function Home() {
       <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
         <div className="sidebar-intro">
           <p className="eyebrow">ZERO TO AUTOMATION ENGINEER</p>
-          <h2>6 chapters · 300 scenarios · 12 capstones</h2>
+          <h2>6 chapters · {totalScenarios} scenarios · {totalCapstones} capstones</h2>
           <p>Learn the concept. Solve the incident. Build the production project.</p>
         </div>
 
@@ -217,9 +223,9 @@ export default function Home() {
                 <span className="chapter-number">{item.number}</span>
                 <span className="chapter-copy">
                   <b>{item.title}</b>
-                  <small>{item.track} · {done}/50 complete</small>
+                  <small>{item.track} · {done}/{item.scenarios.length} complete</small>
                   <span className="chapter-progress">
-                    <i style={{ width: `${done * 2}%` }} />
+                    <i style={{ width: `${(done / item.scenarios.length) * 100}%` }} />
                   </span>
                 </span>
               </button>
@@ -261,8 +267,14 @@ export default function Home() {
           </div>
           <div className="chapter-score">
             <strong>{chapterCompleted}</strong>
-            <span>of 50 scenarios</span>
-            <div><i style={{ width: `${chapterCompleted * 2}%` }} /></div>
+            <span>of {chapter.scenarios.length} scenarios</span>
+            <div>
+              <i
+                style={{
+                  width: `${(chapterCompleted / chapter.scenarios.length) * 100}%`,
+                }}
+              />
+            </div>
           </div>
         </div>
 
@@ -281,7 +293,7 @@ export default function Home() {
             className={mode === "practice" ? "active" : ""}
             onClick={() => setMode("practice")}
           >
-            <span>02</span> Scenario bank <b>50</b>
+            <span>02</span> Scenario bank <b>{chapter.scenarios.length}</b>
           </button>
           <button
             role="tab"
@@ -289,7 +301,7 @@ export default function Home() {
             className={mode === "capstone" ? "active" : ""}
             onClick={() => setMode("capstone")}
           >
-            <span>03</span> DevOps/SRE capstones <b>2</b>
+            <span>03</span> DevOps/SRE capstones <b>{chapter.capstones.length}</b>
           </button>
         </div>
 
@@ -360,7 +372,7 @@ function LearnView({
           <span><i className="advanced" /> Advanced</span>
         </div>
         <button className="primary-cta" onClick={begin}>
-          Start 50 scenarios <span>→</span>
+          Start {chapter.scenarios.length} scenarios <span>→</span>
         </button>
       </section>
 
@@ -588,10 +600,10 @@ function PracticeView({
           >
             ← Previous
           </button>
-          <span>Scenario {scenarioIndex + 1} of 50</span>
+          <span>Scenario {scenarioIndex + 1} of {chapter.scenarios.length}</span>
           <button
             onClick={() => openScenario(scenarioIndex + 1)}
-            disabled={scenarioIndex === 49}
+            disabled={scenarioIndex === chapter.scenarios.length - 1}
           >
             Next →
           </button>

@@ -54,6 +54,11 @@ const contexts = [
   "a DevOps team maintaining a multi-account cloud landing zone",
   "an on-call team supporting a highly available API platform",
   "a release engineering team operating enterprise CI/CD pipelines",
+  "a platform team managing a production Kubernetes cluster fleet",
+  "an observability team operating metrics, logs, traces, and alerting",
+  "a GitOps team maintaining infrastructure-as-code delivery workflows",
+  "an SRE incident-response program reducing operational toil",
+  "a network platform team supporting ingress, DNS, and service connectivity",
 ];
 
 function expand(chapterId: string, seeds: ScenarioSeed[]): Scenario[] {
@@ -1230,17 +1235,787 @@ def release_allowed(window: Window, objective: float = 0.999) -> bool:
   ],
 };
 
+type OperationalCapstoneSeed = Omit<
+  Capstone,
+  "deliverables" | "stages" | "acceptance"
+> & {
+  artifact: string;
+  guardrail: string;
+};
+
+function operationalCapstone(seed: OperationalCapstoneSeed): Capstone {
+  const { artifact, guardrail, ...project } = seed;
+  return {
+    ...project,
+    deliverables: [
+      `A working ${artifact} with configuration separated from code`,
+      "Dry-run, structured logging, clear exit codes, and an audit report",
+      "Unit tests with mocked infrastructure and explicit failure-path coverage",
+      "A README, architecture notes, operating runbook, and sample evidence",
+    ],
+    stages: [
+      {
+        title: "Discover and model",
+        details:
+          "Collect the required operational state, normalize it into typed records, and reject incomplete or unsafe input.",
+      },
+      {
+        title: "Decide with policy",
+        details:
+          "Compare observed state with the declared rule, explain every decision, and preview the action in dry-run mode.",
+      },
+      {
+        title: "Act, verify, and report",
+        details:
+          "Execute only allow-listed changes, verify the resulting state, and write evidence that another engineer can audit.",
+      },
+    ],
+    acceptance: [
+      guardrail,
+      "Every external operation has a timeout, bounded retry, and isolated error handling",
+      "Repeated execution is idempotent and does not duplicate actions",
+      "Tests exercise success, partial failure, invalid input, and dry-run behavior",
+    ],
+  };
+}
+
+const additionalCapstonesByChapter: Record<string, Capstone[]> = {
+  "python-mastery": [
+    operationalCapstone({
+      id: "python-config-drift",
+      title: "Build a configuration-drift detection CLI",
+      role: "Platform engineer enforcing consistent service configuration",
+      incident: "A manual production edit diverged from Git and caused different behavior across replicas.",
+      mission: "Compare desired YAML or JSON configuration with live snapshots, classify drift, and produce a safe reconciliation plan.",
+      skills: ["argparse", "pathlib", "JSON", "dataclasses", "recursive comparison", "exit codes"],
+      artifact: "drift-detection command-line tool",
+      guardrail: "The default mode reports drift and never modifies live configuration",
+      solution: `import json
+from pathlib import Path
+
+def flatten(value, prefix=""):
+    if isinstance(value, dict):
+        return {key: item for name, child in value.items()
+                for key, item in flatten(child, f"{prefix}.{name}".strip(".")).items()}
+    return {prefix: value}
+
+desired = flatten(json.loads(Path("desired.json").read_text()))
+actual = flatten(json.loads(Path("actual.json").read_text()))
+drift = {key: {"desired": desired.get(key), "actual": actual.get(key)}
+         for key in desired.keys() | actual.keys() if desired.get(key) != actual.get(key)}
+print(json.dumps(drift, indent=2))`,
+      result: "Engineers receive an exact, reviewable drift report before deciding whether to reconcile production.",
+    }),
+    operationalCapstone({
+      id: "python-rollout-observer",
+      title: "Create a Kubernetes rollout observer",
+      role: "SRE monitoring application deployments across namespaces",
+      incident: "A rollout remained partially available while the CI job reported success.",
+      mission: "Parse rollout snapshots, track ready replicas and image versions, enforce a deadline, and report the blocking workload.",
+      skills: ["subprocess", "JSON parsing", "timeouts", "dataclasses", "logging", "testing"],
+      artifact: "Kubernetes rollout observation utility",
+      guardrail: "The tool uses read-only Kubernetes commands and cannot mutate workloads",
+      solution: `import json, subprocess, time
+
+def deployments(namespace):
+    result = subprocess.run(
+        ["kubectl", "get", "deploy", "-n", namespace, "-o", "json"],
+        capture_output=True, text=True, check=True, timeout=15,
+    )
+    return json.loads(result.stdout)["items"]
+
+def ready(item):
+    desired = item["spec"].get("replicas", 1)
+    return item.get("status", {}).get("readyReplicas", 0) == desired
+
+blocked = [item["metadata"]["name"] for item in deployments("production") if not ready(item)]
+print({"blocked": blocked})`,
+      result: "The delivery pipeline fails with the names and readiness evidence of workloads that did not complete rollout.",
+    }),
+    operationalCapstone({
+      id: "python-synthetic-monitor",
+      title: "Develop a multi-endpoint synthetic monitoring runner",
+      role: "SRE validating critical user journeys from several regions",
+      incident: "Basic uptime checks passed while authentication and checkout dependencies were failing.",
+      mission: "Run configurable synthetic steps concurrently, validate latency and response contracts, and emit SLI-compatible results.",
+      skills: ["asyncio", "HTTP clients", "timeouts", "percentiles", "JSON", "structured logs"],
+      artifact: "synthetic monitoring runner",
+      guardrail: "Synthetic requests use dedicated test identities and never modify customer data",
+      solution: `import asyncio, time
+
+async def check(name, operation, limit_ms):
+    started = time.monotonic()
+    status = await asyncio.wait_for(operation(), timeout=limit_ms / 1000)
+    latency = round((time.monotonic() - started) * 1000)
+    return {"name": name, "ok": status == 200 and latency <= limit_ms, "latency_ms": latency}
+
+async def run(checks):
+    return await asyncio.gather(*(check(**item) for item in checks), return_exceptions=True)`,
+      result: "Monitoring reports journey-level availability and latency instead of relying on a shallow process check.",
+    }),
+    operationalCapstone({
+      id: "python-iac-risk",
+      title: "Build an infrastructure-plan risk analyzer",
+      role: "Platform engineer reviewing Terraform plans in CI",
+      incident: "A routine change replaced a production database because destructive plan actions were missed.",
+      mission: "Parse Terraform plan JSON, score risky changes, enforce environment policy, and generate pull-request evidence.",
+      skills: ["JSON", "rule engines", "enums", "CLI design", "testing", "CI exit codes"],
+      artifact: "Terraform plan risk-analysis gate",
+      guardrail: "The analyzer is read-only and blocks destructive production actions unless explicitly approved",
+      solution: `import json
+from pathlib import Path
+
+RISK = {"delete": 5, "create": 1, "update": 2, "no-op": 0}
+
+def score(change):
+    return sum(RISK.get(action, 3) for action in change["change"]["actions"])
+
+plan = json.loads(Path("tfplan.json").read_text())
+findings = [{"address": item["address"], "risk": score(item)}
+            for item in plan["resource_changes"] if score(item) >= 5]
+print(json.dumps(findings, indent=2))`,
+      result: "Pull requests surface destructive infrastructure changes before approval and deployment.",
+    }),
+    operationalCapstone({
+      id: "python-runbook-cli",
+      title: "Turn an operational runbook into a guarded automation CLI",
+      role: "SRE reducing repetitive incident-response toil",
+      incident: "Manual runbook steps were executed out of order during a high-severity incident.",
+      mission: "Model runbook steps with preconditions, approvals, dry-run output, checkpoints, rollback, and a complete execution record.",
+      skills: ["classes", "protocols", "state machines", "argparse", "logging", "rollback"],
+      artifact: "checkpointed runbook automation CLI",
+      guardrail: "Destructive steps require an explicit apply flag and a recorded approval",
+      solution: `from dataclasses import dataclass
+
+@dataclass
+class Step:
+    name: str
+    check: callable
+    action: callable
+
+def execute(steps, apply=False):
+    report = []
+    for step in steps:
+        allowed = step.check()
+        outcome = step.action() if allowed and apply else "preview"
+        report.append({"step": step.name, "allowed": allowed, "outcome": outcome})
+    return report`,
+      result: "Responders execute the approved runbook in order with checkpoints, evidence, and a safe preview path.",
+    }),
+  ],
+  "os-files": [
+    operationalCapstone({
+      id: "os-log-retention",
+      title: "Build a policy-driven log rotation and retention manager",
+      role: "Platform engineer controlling disk growth on build and utility hosts",
+      incident: "Unbounded application logs exhausted the root filesystem and interrupted deployments.",
+      mission: "Discover oversized logs, rotate active files safely, compress closed files, and enforce tiered retention rules.",
+      skills: ["pathlib", "file metadata", "gzip", "atomic rename", "retention policy", "dry-run"],
+      artifact: "log rotation and retention manager",
+      guardrail: "Active files are copied or renamed safely and deletion is disabled by default",
+      solution: `import gzip, shutil
+from pathlib import Path
+
+def rotate(path: Path, limit: int):
+    if path.stat().st_size < limit:
+        return "within-policy"
+    archive = path.with_suffix(path.suffix + ".1.gz")
+    with path.open("rb") as source, gzip.open(archive, "wb") as target:
+        shutil.copyfileobj(source, target)
+    path.write_text("", encoding="utf-8")
+    return str(archive)`,
+      result: "Hosts remain within disk policy while recent diagnostic logs stay compressed and available.",
+    }),
+    operationalCapstone({
+      id: "os-permission-audit",
+      title: "Create a secrets and filesystem-permission auditor",
+      role: "DevSecOps engineer auditing CI runners and automation hosts",
+      incident: "A credentials file was accidentally created with world-readable permissions.",
+      mission: "Scan approved roots for secret-like files, inspect Unix modes and ownership, redact evidence, and propose safe corrections.",
+      skills: ["pathlib", "stat", "ownership", "pattern matching", "redaction", "CSV reports"],
+      artifact: "filesystem permission auditing tool",
+      guardrail: "The scanner never reads secret values into its report and fixes require explicit apply mode",
+      solution: `import stat
+from pathlib import Path
+
+SENSITIVE = {".env", "credentials", "id_rsa"}
+
+def finding(path: Path):
+    mode = stat.S_IMODE(path.stat().st_mode)
+    if path.name in SENSITIVE and mode & 0o077:
+        return {"path": str(path), "mode": oct(mode), "expected": "0o600"}
+
+findings = [item for path in Path("workspace").rglob("*")
+            if path.is_file() and (item := finding(path))]
+print(findings)`,
+      result: "Automation hosts receive a value-free report of exposed credential files and the exact safe mode required.",
+    }),
+    operationalCapstone({
+      id: "os-capacity-forecast",
+      title: "Develop a filesystem capacity and growth analyzer",
+      role: "SRE forecasting storage exhaustion across platform nodes",
+      incident: "A rapidly growing cache volume crossed its alert threshold between daily checks.",
+      mission: "Create repeatable snapshots, calculate directory growth, rank large paths, and estimate time to capacity.",
+      skills: ["pathlib", "disk usage", "CSV history", "statistics", "top-N reports", "alerts"],
+      artifact: "filesystem growth forecasting utility",
+      guardrail: "Scanning stays inside configured roots and excludes virtual or sensitive filesystems",
+      solution: `from pathlib import Path
+
+def directory_bytes(root: Path) -> int:
+    total = 0
+    for path in root.rglob("*"):
+        try:
+            if path.is_file():
+                total += path.stat().st_size
+        except OSError:
+            continue
+    return total
+
+print({"cache_bytes": directory_bytes(Path("/var/cache/app"))})`,
+      result: "SREs can prioritize growing paths and act before a filesystem reaches its operational limit.",
+    }),
+    operationalCapstone({
+      id: "os-manifest-drift",
+      title: "Implement a host file-integrity baseline monitor",
+      role: "Platform engineer protecting critical automation configuration",
+      incident: "A critical startup script changed outside the deployment process and was not detected.",
+      mission: "Create a signed-style checksum baseline, compare later snapshots, and classify created, modified, and missing files.",
+      skills: ["hashlib", "JSON manifests", "path normalization", "file metadata", "diff reports", "exclusions"],
+      artifact: "file-integrity baseline monitor",
+      guardrail: "Baseline updates require a separate explicit command and never happen during verification",
+      solution: `import hashlib, json
+from pathlib import Path
+
+def snapshot(root: Path):
+    return {
+        str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in root.rglob("*") if path.is_file()
+    }
+
+current = snapshot(Path("config"))
+baseline = json.loads(Path("baseline.json").read_text())
+changed = {name for name in current.keys() | baseline.keys()
+           if current.get(name) != baseline.get(name)}
+print(sorted(changed))`,
+      result: "Unauthorized or accidental changes to platform configuration are detected with exact path and checksum evidence.",
+    }),
+    operationalCapstone({
+      id: "os-restore-drill",
+      title: "Automate backup restore verification drills",
+      role: "SRE proving that platform backups are recoverable",
+      incident: "A backup job was green for months, but its archive could not be restored during an incident.",
+      mission: "Select a recent backup, extract it into isolation, verify manifests, run validation checks, and publish recovery evidence.",
+      skills: ["archives", "temporary directories", "hashing", "manifests", "cleanup", "reports"],
+      artifact: "backup restore-verification runner",
+      guardrail: "Restores occur only inside a newly created temporary directory",
+      solution: `import hashlib, tempfile
+from pathlib import Path
+from zipfile import ZipFile
+
+def verify(archive: Path, expected: dict):
+    with tempfile.TemporaryDirectory() as directory:
+        with ZipFile(archive) as bundle:
+            bundle.extractall(directory)
+        root = Path(directory)
+        return all(
+            hashlib.sha256((root / name).read_bytes()).hexdigest() == digest
+            for name, digest in expected.items()
+        )`,
+      result: "Backup health is measured by successful isolated restoration and integrity checks, not job completion alone.",
+    }),
+  ],
+  "linux-automation": [
+    operationalCapstone({
+      id: "linux-patch-readiness",
+      title: "Build a Linux patch-readiness orchestrator",
+      role: "SRE preparing a fleet for scheduled security maintenance",
+      incident: "A node rebooted without enough capacity elsewhere in the cluster, reducing service availability.",
+      mission: "Check capacity, package state, uptime, active sessions, and workload drain readiness before approving a host patch.",
+      skills: ["subprocess", "package managers", "load checks", "timeouts", "maintenance windows", "exit codes"],
+      artifact: "Linux patch-readiness gate",
+      guardrail: "The readiness command is read-only and cannot install packages or reboot hosts",
+      solution: `import shutil, subprocess
+
+def check(args):
+    return subprocess.run(args, capture_output=True, text=True, timeout=15)
+
+def ready():
+    free = shutil.disk_usage("/").free
+    failed = check(["systemctl", "--failed", "--no-legend"]).stdout.strip()
+    updates = check(["apt-get", "-s", "upgrade"]).returncode
+    return free > 5_000_000_000 and not failed and updates == 0
+
+print({"patch_ready": ready()})`,
+      result: "Maintenance proceeds only when the node and surrounding platform meet the declared safety conditions.",
+    }),
+    operationalCapstone({
+      id: "linux-ssh-compliance",
+      title: "Create an SSH access and account compliance auditor",
+      role: "Platform engineer maintaining hardened Linux access",
+      incident: "A former contractor account and an unauthorized SSH key remained active on a utility host.",
+      mission: "Inventory interactive users, sudo membership, authorized keys, shell policy, and recent access without exposing key contents.",
+      skills: ["pwd/grp", "pathlib", "permissions", "subprocess", "fingerprints", "compliance reports"],
+      artifact: "Linux access compliance auditor",
+      guardrail: "The report stores only public-key fingerprints and never private or full key material",
+      solution: `import hashlib, pwd
+from pathlib import Path
+
+def fingerprint(line: str) -> str:
+    return hashlib.sha256(line.encode()).hexdigest()[:16]
+
+records = []
+for user in pwd.getpwall():
+    keys = Path(user.pw_dir) / ".ssh" / "authorized_keys"
+    if user.pw_shell.endswith(("bash", "zsh")) and keys.exists():
+        records.append({"user": user.pw_name,
+                        "keys": [fingerprint(line) for line in keys.read_text().splitlines()]})
+print(records)`,
+      result: "Reviewers receive an accountable map of interactive Linux access without leaking authentication material.",
+    }),
+    operationalCapstone({
+      id: "linux-container-host",
+      title: "Develop a container-host health inspector",
+      role: "SRE operating Linux nodes that run container workloads",
+      incident: "Container restarts increased because inode, cgroup, and runtime pressure were not in the standard host check.",
+      mission: "Collect runtime state, disk and inode pressure, cgroup limits, kernel messages, and failed units into one health decision.",
+      skills: ["subprocess", "procfs", "cgroups", "disk/inodes", "kernel logs", "JSON"],
+      artifact: "container-host health inspection command",
+      guardrail: "All collectors are read-only and bound by strict output and execution limits",
+      solution: `import json, subprocess
+
+def collect(name, args):
+    result = subprocess.run(args, capture_output=True, text=True, timeout=10)
+    return {"name": name, "code": result.returncode, "output": result.stdout[-10000:]}
+
+report = [
+    collect("runtime", ["systemctl", "is-active", "containerd"]),
+    collect("containers", ["ctr", "containers", "list"]),
+    collect("kernel", ["dmesg", "--level=err"]),
+]
+print(json.dumps(report, indent=2))`,
+      result: "Node health includes the Linux and container-runtime signals required to explain workload instability.",
+    }),
+    operationalCapstone({
+      id: "linux-certificate-monitor",
+      title: "Build a TLS certificate expiry monitor",
+      role: "SRE protecting ingress endpoints and internal service certificates",
+      incident: "An internal certificate expired silently and broke service-to-service communication.",
+      mission: "Discover configured endpoints and certificate files, calculate days remaining, validate names, and alert by severity.",
+      skills: ["ssl", "socket", "datetime", "pathlib", "timeouts", "alert thresholds"],
+      artifact: "TLS certificate expiry monitoring utility",
+      guardrail: "Network probes use short timeouts and certificate files are read without private-key access",
+      solution: `import socket, ssl
+from datetime import datetime, timezone
+
+def days_left(host: str, port: int = 443) -> int:
+    context = ssl.create_default_context()
+    with socket.create_connection((host, port), timeout=5) as raw:
+        with context.wrap_socket(raw, server_hostname=host) as secure:
+            expires = ssl.cert_time_to_seconds(secure.getpeercert()["notAfter"])
+    return int((datetime.fromtimestamp(expires, timezone.utc)
+                - datetime.now(timezone.utc)).days)
+
+print({"api.example.com": days_left("api.example.com")})`,
+      result: "Expiring endpoint certificates become visible early enough for controlled rotation.",
+    }),
+    operationalCapstone({
+      id: "linux-scheduler-audit",
+      title: "Audit cron jobs and systemd timers across a host",
+      role: "Platform engineer reducing hidden scheduled-workload risk",
+      incident: "An undocumented root cron job repeatedly deleted deployment artifacts.",
+      mission: "Inventory cron locations and systemd timers, resolve command owners, flag risky patterns, and generate migration recommendations.",
+      skills: ["pathlib", "systemd", "subprocess", "ownership", "command analysis", "reports"],
+      artifact: "scheduled-task inventory and risk auditor",
+      guardrail: "The auditor never enables, disables, or edits scheduled jobs",
+      solution: `import subprocess
+from pathlib import Path
+
+def cron_files():
+    roots = [Path("/etc/cron.d"), Path("/var/spool/cron")]
+    return [path for root in roots if root.exists() for path in root.rglob("*") if path.is_file()]
+
+timers = subprocess.run(
+    ["systemctl", "list-timers", "--all", "--no-pager"],
+    capture_output=True, text=True, timeout=10,
+).stdout
+print({"cron_files": [str(path) for path in cron_files()], "timers": timers})`,
+      result: "Every scheduled Linux action has visible ownership, timing, command, and risk evidence.",
+    }),
+  ],
+  "aws-boto3": [
+    operationalCapstone({
+      id: "aws-cost-governance",
+      title: "Build an AWS cost and ownership governance reporter",
+      role: "Cloud platform engineer controlling unowned and idle resources",
+      incident: "Monthly cloud spend increased because development resources had no owner or expiry policy.",
+      mission: "Use boto3 to inventory cost-driving resources, evaluate ownership tags and utilization, and produce accountable cleanup candidates.",
+      skills: ["boto3", "Cost Explorer", "CloudWatch", "tags", "paginators", "CSV"],
+      artifact: "AWS cost-governance reporting pipeline",
+      guardrail: "The reporting workflow is read-only and never terminates or resizes resources",
+      solution: `import boto3
+
+ec2 = boto3.client("ec2")
+cloudwatch = boto3.client("cloudwatch")
+
+def unowned_instances():
+    paginator = ec2.get_paginator("describe_instances")
+    for page in paginator.paginate():
+        for reservation in page["Reservations"]:
+            for instance in reservation["Instances"]:
+                tags = {item["Key"]: item["Value"] for item in instance.get("Tags", [])}
+                if "Owner" not in tags:
+                    yield instance["InstanceId"]
+
+print(list(unowned_instances()))`,
+      result: "Platform teams receive owner-aware savings candidates backed by inventory and utilization evidence.",
+    }),
+    operationalCapstone({
+      id: "aws-iam-audit",
+      title: "Create an AWS IAM credential exposure auditor",
+      role: "Platform security engineer enforcing short-lived cloud access",
+      incident: "A long-lived access key remained active beyond policy and was used from an unexpected location.",
+      mission: "Inventory IAM credential reports, flag old or unused keys, review MFA and password state, and generate remediation tickets.",
+      skills: ["boto3 IAM", "credential reports", "datetime", "pagination", "least privilege", "audit evidence"],
+      artifact: "AWS IAM credential compliance auditor",
+      guardrail: "The first phase is read-only; key deactivation requires separate approval and apply mode",
+      solution: `import boto3, csv, io
+from datetime import datetime, timezone
+
+iam = boto3.client("iam")
+iam.generate_credential_report()
+content = iam.get_credential_report()["Content"].decode()
+rows = list(csv.DictReader(io.StringIO(content)))
+findings = [row["user"] for row in rows
+            if row["access_key_1_active"] == "true" and row["mfa_active"] != "true"]
+print(findings)`,
+      result: "Identity owners receive precise evidence for long-lived credentials and missing MFA before access is changed.",
+    }),
+    operationalCapstone({
+      id: "aws-snapshot-policy",
+      title: "Automate EBS snapshot policy and restore evidence",
+      role: "SRE protecting stateful workloads in AWS",
+      incident: "A volume had snapshots, but none matched the documented retention and restore policy.",
+      mission: "Create tagged snapshots, wait for completion, enforce retention by application, and record periodic restore-test evidence.",
+      skills: ["boto3 EC2", "waiters", "tags", "retention", "dry-run", "idempotency"],
+      artifact: "EBS snapshot lifecycle and verification tool",
+      guardrail: "Deletion requires policy tags, minimum retained copies, dry-run review, and explicit apply mode",
+      solution: `import boto3
+
+ec2 = boto3.client("ec2")
+
+def snapshot(volume_id: str, application: str):
+    response = ec2.create_snapshot(
+        VolumeId=volume_id,
+        Description=f"managed backup for {application}",
+        TagSpecifications=[{"ResourceType": "snapshot", "Tags": [
+            {"Key": "ManagedBy", "Value": "platform-backup"},
+            {"Key": "Application", "Value": application},
+        ]}],
+    )
+    ec2.get_waiter("snapshot_completed").wait(SnapshotIds=[response["SnapshotId"]])
+    return response["SnapshotId"]`,
+      result: "Stateful AWS workloads have tagged, completed, retained, and periodically verified recovery points.",
+    }),
+    operationalCapstone({
+      id: "aws-route53-failover",
+      title: "Build a Route 53 failover readiness verifier",
+      role: "SRE validating multi-region DNS recovery",
+      incident: "A failover record existed, but its health check referenced the wrong endpoint.",
+      mission: "Inventory failover records and health checks, validate primary/secondary symmetry, run synthetic probes, and publish readiness.",
+      skills: ["boto3 Route53", "paginators", "DNS", "health checks", "synthetic probes", "reports"],
+      artifact: "Route 53 failover readiness verifier",
+      guardrail: "The verifier performs no DNS changes and cannot trigger production failover",
+      solution: `import boto3
+
+route53 = boto3.client("route53")
+
+def records(zone_id):
+    paginator = route53.get_paginator("list_resource_record_sets")
+    for page in paginator.paginate(HostedZoneId=zone_id):
+        yield from page["ResourceRecordSets"]
+
+failover = [record for record in records("Z123")
+            if record.get("Failover") in {"PRIMARY", "SECONDARY"}]
+print(failover)`,
+      result: "DNS recovery readiness is proven by matching records, health checks, and reachable regional endpoints.",
+    }),
+    operationalCapstone({
+      id: "aws-ecs-rollout",
+      title: "Create an ECS deployment health observer",
+      role: "Platform engineer operating container services on Amazon ECS",
+      incident: "A service deployment stabilized at desired count while tasks repeatedly failed application health checks.",
+      mission: "Track ECS deployments, task-stop reasons, target health, and CloudWatch signals until success or a bounded failure.",
+      skills: ["boto3 ECS", "ELBv2", "CloudWatch", "wait loops", "timeouts", "event evidence"],
+      artifact: "ECS deployment observation and decision tool",
+      guardrail: "Observation is read-only and times out instead of polling forever",
+      solution: `import boto3, time
+
+ecs = boto3.client("ecs")
+
+def wait_healthy(cluster, service, deadline=300):
+    end = time.monotonic() + deadline
+    while time.monotonic() < end:
+        item = ecs.describe_services(cluster=cluster, services=[service])["services"][0]
+        if item["runningCount"] == item["desiredCount"] and len(item["deployments"]) == 1:
+            return True
+        time.sleep(10)
+    return False`,
+      result: "CI receives an evidence-backed ECS rollout result instead of relying only on desired task count.",
+    }),
+  ],
+  "azure-sdk": [
+    operationalCapstone({
+      id: "azure-resource-governance",
+      title: "Build an Azure resource-group governance auditor",
+      role: "Azure platform engineer enforcing subscription standards",
+      incident: "Resources without owner, environment, or expiry tags accumulated outside managed resource groups.",
+      mission: "Inventory resource groups and resources, evaluate tags, locks, regions, and policy state, then publish accountable findings.",
+      skills: ["Azure Identity", "ResourceManagementClient", "paging", "tags", "locks", "CSV"],
+      artifact: "Azure resource-governance auditor",
+      guardrail: "The auditor uses read-only role permissions and cannot create or delete resources",
+      solution: `from azure.identity import DefaultAzureCredential
+from azure.mgmt.resource import ResourceManagementClient
+
+def findings(subscription_id):
+    client = ResourceManagementClient(DefaultAzureCredential(), subscription_id)
+    for group in client.resource_groups.list():
+        tags = group.tags or {}
+        missing = [key for key in ("owner", "environment") if key not in tags]
+        if missing:
+            yield {"group": group.name, "missing": missing}
+
+print(list(findings("subscription-id")))`,
+      result: "Subscription owners receive a complete governance backlog mapped to resource groups and required standards.",
+    }),
+    operationalCapstone({
+      id: "azure-keyvault-rotation",
+      title: "Create an Azure Key Vault rotation readiness monitor",
+      role: "Platform engineer tracking application secret and certificate expiry",
+      incident: "A service credential expired because ownership and rotation windows were not monitored.",
+      mission: "Inventory Key Vault secret and certificate metadata, calculate rotation windows, map ownership tags, and raise evidence-rich alerts.",
+      skills: ["DefaultAzureCredential", "SecretClient", "CertificateClient", "datetime", "paging", "alerts"],
+      artifact: "Key Vault rotation readiness monitor",
+      guardrail: "The monitor reads metadata only and never retrieves or logs secret values",
+      solution: `from datetime import datetime, timezone
+from azure.identity import DefaultAzureCredential
+from azure.keyvault.secrets import SecretClient
+
+client = SecretClient("https://vault.vault.azure.net", DefaultAzureCredential())
+findings = []
+for item in client.list_properties_of_secrets():
+    if item.expires_on:
+        days = (item.expires_on - datetime.now(timezone.utc)).days
+        if days < 30:
+            findings.append({"name": item.name, "days_left": days})
+print(findings)`,
+      result: "Credential owners receive advance rotation alerts without exposing secret material.",
+    }),
+    operationalCapstone({
+      id: "azure-aks-health",
+      title: "Build an AKS node-pool health and upgrade planner",
+      role: "SRE maintaining production Azure Kubernetes Service clusters",
+      incident: "A node-pool upgrade started with insufficient surge capacity and disrupted workloads.",
+      mission: "Inventory AKS versions, node pools, capacity, availability zones, and upgrade paths, then generate a safe maintenance plan.",
+      skills: ["ContainerServiceClient", "Azure Identity", "Kubernetes capacity", "version policy", "maintenance planning", "reports"],
+      artifact: "AKS upgrade-readiness planner",
+      guardrail: "The planner is read-only and never starts a cluster or node-pool upgrade",
+      solution: `from azure.identity import DefaultAzureCredential
+from azure.mgmt.containerservice import ContainerServiceClient
+
+def node_pools(subscription_id, group, cluster):
+    client = ContainerServiceClient(DefaultAzureCredential(), subscription_id)
+    return [
+        {"name": pool.name, "count": pool.count, "version": pool.orchestrator_version}
+        for pool in client.agent_pools.list(group, cluster)
+    ]
+
+print(node_pools("subscription-id", "platform-rg", "production-aks"))`,
+      result: "Cluster upgrades begin with verified version compatibility, capacity, and node-pool evidence.",
+    }),
+    operationalCapstone({
+      id: "azure-nsg-audit",
+      title: "Develop an Azure NSG exposure and rule auditor",
+      role: "Cloud platform engineer protecting Azure network boundaries",
+      incident: "A temporary management rule exposed SSH to the internet and was never removed.",
+      mission: "Inventory NSGs and effective rules, normalize priorities and address prefixes, and flag public management or broad inbound access.",
+      skills: ["NetworkManagementClient", "NSG rules", "CIDR", "paging", "policy checks", "JSON"],
+      artifact: "Azure NSG exposure auditing tool",
+      guardrail: "The first phase reports only; remediation requires approved rule IDs and apply mode",
+      solution: `from azure.identity import DefaultAzureCredential
+from azure.mgmt.network import NetworkManagementClient
+
+def public_rules(subscription_id):
+    client = NetworkManagementClient(DefaultAzureCredential(), subscription_id)
+    for nsg in client.network_security_groups.list_all():
+        for rule in nsg.security_rules or []:
+            if rule.direction == "Inbound" and rule.access == "Allow":
+                if rule.source_address_prefix in {"*", "0.0.0.0/0", "Internet"}:
+                    yield {"nsg": nsg.name, "rule": rule.name, "port": rule.destination_port_range}
+
+print(list(public_rules("subscription-id")))`,
+      result: "Network owners receive exact NSG rules that expose management or application ports publicly.",
+    }),
+    operationalCapstone({
+      id: "azure-backup-verifier",
+      title: "Automate Azure Backup policy and recovery-point verification",
+      role: "SRE proving recovery readiness for Azure workloads",
+      incident: "A protected VM had no recent application-consistent recovery point despite a healthy vault.",
+      mission: "Inventory protected items, policies, job failures, and latest recovery points, then classify RPO compliance.",
+      skills: ["RecoveryServicesBackupClient", "Azure Identity", "paging", "RPO policy", "datetime", "evidence"],
+      artifact: "Azure Backup recovery-readiness verifier",
+      guardrail: "The verifier cannot trigger restore or delete recovery points",
+      solution: `from datetime import datetime, timezone
+
+def rpo_compliant(last_recovery, maximum_hours=24):
+    age = datetime.now(timezone.utc) - last_recovery
+    return age.total_seconds() <= maximum_hours * 3600
+
+def summarize(items):
+    return [{"name": item["name"],
+             "rpo_ok": rpo_compliant(item["last_recovery"])}
+            for item in items]`,
+      result: "Backup readiness is measured against workload RPO using actual recovery-point timestamps.",
+    }),
+  ],
+  production: [
+    operationalCapstone({
+      id: "production-chaos-readiness",
+      title: "Build a guarded chaos-readiness experiment runner",
+      role: "Reliability engineer validating service resilience",
+      incident: "A dependency outage caused a cascading failure because fallback behavior had never been exercised.",
+      mission: "Define bounded failure experiments, validate steady state, require approvals, inject one fault, and verify recovery automatically.",
+      skills: ["state machines", "approvals", "metrics", "timeouts", "rollback", "audit logs"],
+      artifact: "guarded resilience experiment runner",
+      guardrail: "Experiments require an approved target, blast-radius limit, maintenance window, and automatic stop condition",
+      solution: `from dataclasses import dataclass
+
+@dataclass
+class Experiment:
+    target: str
+    max_seconds: int
+    approved: bool
+
+def run(experiment, provider, healthy):
+    if not experiment.approved or not healthy():
+        return "blocked"
+    provider.inject(experiment.target)
+    try:
+        return "resilient" if healthy() else "failed"
+    finally:
+        provider.restore(experiment.target)`,
+      result: "Teams prove fallback and recovery behavior inside a controlled blast radius before a real outage.",
+    }),
+    operationalCapstone({
+      id: "production-incident-timeline",
+      title: "Create an incident timeline and handoff generator",
+      role: "Incident commander coordinating multi-team response",
+      incident: "Key decisions and ownership changes were lost across chat, alerts, and manual notes.",
+      mission: "Normalize event exports, correlate alerts and actions, track owners and decisions, and generate live handoff and post-incident timelines.",
+      skills: ["datetime", "event schemas", "deduplication", "correlation", "Markdown", "auditability"],
+      artifact: "incident timeline and handoff generator",
+      guardrail: "Sensitive tokens and personal data are redacted before events are written",
+      solution: `from datetime import datetime
+
+def timeline(events):
+    unique = {event["id"]: event for event in events}
+    return sorted(unique.values(), key=lambda event: datetime.fromisoformat(event["timestamp"]))
+
+def markdown(events):
+    return "\\n".join(
+        f'- {event["timestamp"]} — {event["type"]}: {event["summary"]}'
+        for event in timeline(events)
+    )`,
+      result: "Every responder sees the same ordered decisions, actions, owners, and current incident state.",
+    }),
+    operationalCapstone({
+      id: "production-dependency-map",
+      title: "Build a service dependency health map",
+      role: "Platform SRE diagnosing cascading failures",
+      incident: "Teams treated downstream symptoms independently because service dependencies were not visible.",
+      mission: "Combine service catalog data with health and telemetry, propagate dependency risk, and identify likely upstream causes.",
+      skills: ["graphs", "service catalogs", "health checks", "topological traversal", "JSON", "visual reports"],
+      artifact: "service dependency health analysis tool",
+      guardrail: "Health collection is read-only and cyclic dependencies are detected safely",
+      solution: `def impacted(graph, failed):
+    affected = set(failed)
+    changed = True
+    while changed:
+        changed = False
+        for service, dependencies in graph.items():
+            if service not in affected and affected.intersection(dependencies):
+                affected.add(service)
+                changed = True
+    return sorted(affected)
+
+print(impacted({"api": ["database"], "frontend": ["api"]}, {"database"}))`,
+      result: "Responders see the likely upstream failure and every dependent service affected by it.",
+    }),
+    operationalCapstone({
+      id: "production-alert-quality",
+      title: "Develop an alert quality and noise auditor",
+      role: "SRE improving signal-to-noise for the on-call rotation",
+      incident: "Frequent non-actionable alerts caused responders to miss a real service degradation.",
+      mission: "Analyze alert history, group duplicates, calculate actionability and repeat rates, and recommend tuning with evidence.",
+      skills: ["CSV/JSON", "statistics", "grouping", "time windows", "SLO mapping", "reports"],
+      artifact: "alert quality auditing pipeline",
+      guardrail: "Recommendations never disable alerts automatically",
+      solution: `from collections import defaultdict
+
+def summarize(alerts):
+    grouped = defaultdict(list)
+    for alert in alerts:
+        grouped[alert["rule"]].append(alert)
+    return {
+        rule: {
+            "count": len(items),
+            "actionable_rate": sum(item["action_taken"] for item in items) / len(items),
+        }
+        for rule, items in grouped.items()
+    }`,
+      result: "Alert owners receive evidence-based candidates for deduplication, threshold tuning, or runbook improvement.",
+    }),
+    operationalCapstone({
+      id: "production-dr-exercise",
+      title: "Create a disaster-recovery exercise controller",
+      role: "Platform engineering lead validating regional recovery",
+      incident: "The documented recovery sequence had not been tested after several architecture changes.",
+      mission: "Orchestrate a dry-run-first recovery exercise with prechecks, approvals, checkpoints, traffic validation, rollback, and timed evidence.",
+      skills: ["workflow state", "provider interfaces", "checkpoints", "RTO/RPO", "rollback", "audit reports"],
+      artifact: "disaster-recovery exercise controller",
+      guardrail: "Production traffic changes require explicit approval and a verified rollback path",
+      solution: `import time
+
+def exercise(steps, approved=False):
+    started = time.monotonic()
+    report = []
+    for step in steps:
+        if step.destructive and not approved:
+            report.append({"step": step.name, "status": "preview"})
+            continue
+        result = step.run()
+        report.append({"step": step.name, "status": result})
+        if result != "passed":
+            break
+    return {"rto_seconds": round(time.monotonic() - started), "steps": report}`,
+      result: "Recovery readiness is backed by timed, repeatable exercise evidence and a verified rollback sequence.",
+    }),
+  ],
+};
+
 export const chapters: Chapter[] = [
   {
     id: "python-mastery",
     number: "01",
     track: "Python",
     title: "Python: foundation to advanced",
-    description: "A complete practical progression before you begin the 50-question scenario bank.",
+    description: "A complete practical progression before you begin the 100-question scenario bank.",
     tools: ["Python 3", "stdlib", "asyncio", "argparse", "unittest"],
     units: pythonUnits,
     scenarios: expand("python", pythonSeeds),
-    capstones: capstonesByChapter["python-mastery"],
+    capstones: [
+      ...capstonesByChapter["python-mastery"],
+      ...additionalCapstonesByChapter["python-mastery"],
+    ],
   },
   {
     id: "os-files",
@@ -1258,7 +2033,10 @@ export const chapters: Chapter[] = [
       ["Reliable update patterns", "Advanced", "Use temporary files and atomic replacement to avoid corruption.", `temp.write_text(content)\nos.replace(temp, target)`],
     ]),
     scenarios: expand("os", osSeeds),
-    capstones: capstonesByChapter["os-files"],
+    capstones: [
+      ...capstonesByChapter["os-files"],
+      ...additionalCapstonesByChapter["os-files"],
+    ],
   },
   {
     id: "linux-automation",
@@ -1276,7 +2054,10 @@ export const chapters: Chapter[] = [
       ["Idempotent maintenance", "Advanced", "Make repeated runs produce the same safe result.", `if stale.exists():\n    stale.unlink()`],
     ]),
     scenarios: expand("linux", linuxSeeds),
-    capstones: capstonesByChapter["linux-automation"],
+    capstones: [
+      ...capstonesByChapter["linux-automation"],
+      ...additionalCapstonesByChapter["linux-automation"],
+    ],
   },
   {
     id: "aws-boto3",
@@ -1294,7 +2075,10 @@ export const chapters: Chapter[] = [
       ["Cross-account automation", "Advanced", "Assume least-privilege roles and build temporary sessions.", `response = sts.assume_role(RoleArn=role, RoleSessionName="inventory")`],
     ]),
     scenarios: expand("aws", awsSeeds),
-    capstones: capstonesByChapter["aws-boto3"],
+    capstones: [
+      ...capstonesByChapter["aws-boto3"],
+      ...additionalCapstonesByChapter["aws-boto3"],
+    ],
   },
   {
     id: "azure-sdk",
@@ -1312,7 +2096,10 @@ export const chapters: Chapter[] = [
       ["Async SDK clients", "Advanced", "Scale I/O-heavy Azure inventory with aio clients.", `async with BlobServiceClient(url, credential=credential) as client:`],
     ]),
     scenarios: expand("azure", azureSeeds),
-    capstones: capstonesByChapter["azure-sdk"],
+    capstones: [
+      ...capstonesByChapter["azure-sdk"],
+      ...additionalCapstonesByChapter["azure-sdk"],
+    ],
   },
   {
     id: "production",
@@ -1330,11 +2117,19 @@ export const chapters: Chapter[] = [
       ["Idempotency and rollback", "Advanced", "Detect desired state and restore the previous state on failure.", `if current != desired:\n    apply(desired)`],
     ]),
     scenarios: expand("production", productionSeeds),
-    capstones: capstonesByChapter.production,
+    capstones: [
+      ...capstonesByChapter.production,
+      ...additionalCapstonesByChapter.production,
+    ],
   },
 ];
 
 export const totalScenarios = chapters.reduce(
   (total, chapter) => total + chapter.scenarios.length,
+  0,
+);
+
+export const totalCapstones = chapters.reduce(
+  (total, chapter) => total + chapter.capstones.length,
   0,
 );

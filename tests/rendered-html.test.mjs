@@ -29,24 +29,28 @@ test("server-renders the PyTrail learning application", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
+  const visibleHtml = html.replaceAll("<!-- -->", "");
   assert.match(html, /<title>PyTrail — Python Automation from Basic to Advanced<\/title>/i);
-  assert.match(html, /6 chapters · 300 scenarios · 12 capstones/);
+  assert.match(visibleHtml, /6 chapters · 600 scenarios · 42 capstones/);
   assert.match(html, /DevOps\/SRE capstones/);
   assert.match(html, /Scenario bank/);
   assert.match(html, /AWS automation with boto3/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/i);
 });
 
-test("defines two complete capstones for every chapter", async () => {
+test("defines seven complete capstones and 100 scenarios for every chapter", async () => {
   const [courseData, page, css] = await Promise.all([
     readFile(new URL("../app/course-data.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
 
-  assert.equal((courseData.match(/\n      role:/g) ?? []).length, 12);
-  assert.equal((courseData.match(/\n      result:/g) ?? []).length, 12);
-  assert.equal((courseData.match(/\n    capstones: capstonesByChapter/g) ?? []).length, 6);
+  assert.equal((courseData.match(/\n      role:/g) ?? []).length, 42);
+  assert.equal((courseData.match(/\n      result:/g) ?? []).length, 42);
+  assert.equal((courseData.match(/\n    capstones: \[/g) ?? []).length, 6);
+  assert.equal((courseData.match(/additionalCapstonesByChapter\[/g) ?? []).length, 5);
+  assert.match(courseData, /additionalCapstonesByChapter\.production/);
+  assert.equal((courseData.match(/\n  "a .*team|\n  "an .*team|\n  "an SRE incident-response/g) ?? []).length, 10);
   assert.match(courseData, /multi-account AWS compliance inventory/i);
   assert.match(courseData, /canary deployment and automatic rollback/i);
   assert.match(courseData, /production Kubernetes platform/i);
