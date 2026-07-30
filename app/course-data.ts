@@ -61,21 +61,192 @@ const contexts = [
   "a network platform team supporting ingress, DNS, and service connectivity",
 ];
 
+type ScenarioObjective = {
+  label: string;
+  situation: string;
+  task: string;
+  starter: string;
+  solution: string;
+  hint: string;
+  checks: string[];
+  output: string;
+};
+
+const scenarioObjectives: ScenarioObjective[] = [
+  {
+    label: "Validate production input",
+    situation: "The automation must reject missing operational input before it performs any work.",
+    task: "Add validate_production_input(value), raise ValueError for None, and validate the primary input.",
+    starter: "\n# Add an input-validation boundary before processing\n",
+    solution: `def validate_production_input(value):
+    if value is None:
+        raise ValueError("required operational input is missing")
+    return value`,
+    hint: "Validate at the boundary and raise a specific error before the main operation.",
+    checks: ["def validate_production_input", "is none", "raise valueerror"],
+    output: "Production input validation passed",
+  },
+  {
+    label: "Add structured observability",
+    situation: "On-call engineers need a searchable completion event with the owning platform context.",
+    task: "Create a named logger and emit automation_check_complete with context in extra.",
+    starter: "\n# Emit a structured completion log for the on-call team\n",
+    solution: `import logging
+logger = logging.getLogger("platform_automation")
+logger.info(
+    "automation_check_complete",
+    extra={"platform_context": "{{context}}"},
+)`,
+    hint: "Use logging.getLogger() and pass structured fields through extra.",
+    checks: ["logging.getlogger(", "logger.info(", "extra="],
+    output: "Structured completion event emitted",
+  },
+  {
+    label: "Introduce dry-run safety",
+    situation: "The team requires a preview that proves what would happen without changing external state.",
+    task: "Make dry_run default to True and print an explicit preview message when it is enabled.",
+    starter: "\n# Add a dry-run safeguard that defaults to safe preview mode\n",
+    solution: `dry_run = True
+if dry_run:
+    print("DRY RUN: no external change applied")`,
+    hint: "Default the flag to True and place the preview behavior under an if condition.",
+    checks: ["dry_run = true", "if dry_run", "dry run"],
+    output: "Dry-run verified; no external change applied",
+  },
+  {
+    label: "Implement bounded retries",
+    situation: "A transient platform API failure must be retried without creating an infinite loop.",
+    task: "Add with_retry(operation, attempts=3), retry RuntimeError, and re-raise after the final attempt.",
+    starter: "\n# Add a bounded retry wrapper for transient failures\n",
+    solution: `def with_retry(operation, attempts=3):
+    for attempt in range(attempts):
+        try:
+            return operation()
+        except RuntimeError:
+            if attempt == attempts - 1:
+                raise`,
+    hint: "Use range(attempts), catch only the transient error, and re-raise on the last loop.",
+    checks: ["def with_retry", "range(attempts)", "except runtimeerror", "raise"],
+    output: "Transient failures are bounded to three attempts",
+  },
+  {
+    label: "Enforce a timeout budget",
+    situation: "The CI/CD job must fail predictably instead of waiting forever for an operational dependency.",
+    task: "Define TIMEOUT_SECONDS=30 and add within_timeout(elapsed_seconds) to enforce the budget.",
+    starter: "\n# Add a 30-second execution budget\n",
+    solution: `TIMEOUT_SECONDS = 30
+
+def within_timeout(elapsed_seconds):
+    return elapsed_seconds <= TIMEOUT_SECONDS`,
+    hint: "Keep the timeout in one named constant and compare elapsed time against it.",
+    checks: ["timeout_seconds = 30", "def within_timeout", "<= timeout_seconds"],
+    output: "Thirty-second timeout budget enforced",
+  },
+  {
+    label: "Produce JSON evidence",
+    situation: "The pipeline needs a machine-readable artifact for audit and troubleshooting.",
+    task: "Create an evidence dictionary with control, context, and status, then serialize it with json.dumps().",
+    starter: "\n# Produce machine-readable evidence for the pipeline\n",
+    solution: `import json
+evidence = {
+    "control": "{{topic}}",
+    "context": "{{context}}",
+    "status": "passed",
+}
+print(json.dumps(evidence, sort_keys=True))`,
+    hint: "Build a dictionary first, then serialize it with json.dumps().",
+    checks: ["import json", "evidence = {", "json.dumps(", "sort_keys=true"],
+    output: "JSON evidence artifact produced",
+  },
+  {
+    label: "Record a UTC audit trail",
+    situation: "The incident timeline requires a timezone-aware record of when the automation decision was made.",
+    task: "Create an audit_record containing a UTC ISO-8601 timestamp, action, and platform context.",
+    starter: "\n# Record a timezone-aware audit event\n",
+    solution: `from datetime import datetime, timezone
+audit_record = {
+    "timestamp": datetime.now(timezone.utc).isoformat(),
+    "action": "{{topic}}",
+    "context": "{{context}}",
+}
+print(audit_record)`,
+    hint: "Use datetime.now(timezone.utc).isoformat() so the timestamp is unambiguous.",
+    checks: ["datetime.now(timezone.utc)", ".isoformat()", "audit_record"],
+    output: "UTC audit record created",
+  },
+  {
+    label: "Expose a controlled CLI",
+    situation: "Platform engineers must run the automation consistently from a terminal and CI runner.",
+    task: "Use argparse to require --environment, add --dry-run, and parse the command-line arguments.",
+    starter: "\n# Expose the automation through a validated CLI\n",
+    solution: `import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("--environment", required=True)
+parser.add_argument("--dry-run", action="store_true")
+args = parser.parse_args()`,
+    hint: "Define both options before calling parse_args(); environment is required and dry-run is a Boolean flag.",
+    checks: ["argparse.argumentparser", '"--environment"', "required=true", '"--dry-run"', "parse_args()"],
+    output: "Validated environment-aware CLI created",
+  },
+  {
+    label: "Add idempotency protection",
+    situation: "A retried job must recognize the same operation and avoid duplicating its effect.",
+    task: "Create idempotency_key(value) with SHA-256 and generate a stable key for this operation.",
+    starter: "\n# Generate a stable idempotency key for safe retries\n",
+    solution: `import hashlib
+
+def idempotency_key(value):
+    return hashlib.sha256(str(value).encode("utf-8")).hexdigest()
+
+operation_key = idempotency_key("{{topic}}:{{context}}")`,
+    hint: "Hash a stable representation of the operation rather than a changing timestamp.",
+    checks: ["import hashlib", "def idempotency_key", "hashlib.sha256(", ".hexdigest()"],
+    output: "Stable idempotency key generated",
+  },
+  {
+    label: "Make the decision testable",
+    situation: "The change cannot enter the platform repository without a deterministic unit test.",
+    task: "Create production_control(value) returning a Boolean and add assertions for allowed and rejected input.",
+    starter: "\n# Separate the decision and prove both outcomes with assertions\n",
+    solution: `def production_control(value):
+    return value is not None
+
+assert production_control("ready") is True
+assert production_control(None) is False`,
+    hint: "Keep the decision free of external calls, then assert one passing and one failing case.",
+    checks: ["def production_control", "return value is not none", "assert production_control", "is false"],
+    output: "Deterministic success and failure tests passed",
+  },
+];
+
+function hydrate(value: string, replacements: Record<string, string>): string {
+  return Object.entries(replacements).reduce(
+    (result, [token, replacement]) => result.replaceAll(`{{${token}}}`, replacement),
+    value,
+  );
+}
+
 function expand(chapterId: string, seeds: ScenarioSeed[]): Scenario[] {
   return contexts.flatMap((context, contextIndex) =>
     seeds.map((seed, seedIndex) => {
       const question = contextIndex * seeds.length + seedIndex + 1;
+      const objective = scenarioObjectives[contextIndex];
+      const replacements = {
+        n: String(contextIndex + 1),
+        context,
+        topic: seed.title.toLowerCase(),
+      };
       return {
         ...seed,
         id: `${chapterId}-${question}`,
-        title: `${seed.title} · Case ${contextIndex + 1}`,
-        situation: seed.situation(context, contextIndex + 1),
-        task: seed.task
-          .replaceAll("{{n}}", String(contextIndex + 1))
-          .replaceAll("{{context}}", context),
-        starter: seed.starter.replaceAll("{{n}}", String(contextIndex + 1)),
-        solution: seed.solution.replaceAll("{{n}}", String(contextIndex + 1)),
-        output: seed.output.replaceAll("{{n}}", String(contextIndex + 1)),
+        title: `${objective.label}: ${seed.title.toLowerCase()}`,
+        situation: `${seed.situation(context, contextIndex + 1)} ${objective.situation}`,
+        task: `${hydrate(seed.task, replacements)} ${hydrate(objective.task, replacements)}`,
+        starter: `${hydrate(seed.starter, replacements)}${hydrate(objective.starter, replacements)}`,
+        solution: `${hydrate(seed.solution, replacements)}\n\n${hydrate(objective.solution, replacements)}`,
+        hint: `${seed.hint} Production requirement: ${objective.hint}`,
+        checks: [...seed.checks, ...objective.checks],
+        output: `${hydrate(seed.output, replacements)}\n${hydrate(objective.output, replacements)}`,
       };
     }),
   );
@@ -2123,6 +2294,20 @@ export const chapters: Chapter[] = [
     ],
   },
 ];
+
+for (const chapter of chapters) {
+  const titles = new Set(chapter.scenarios.map((scenario) => scenario.title));
+  const tasks = new Set(chapter.scenarios.map((scenario) => scenario.task));
+  if (
+    chapter.scenarios.length !== 100 ||
+    titles.size !== chapter.scenarios.length ||
+    tasks.size !== chapter.scenarios.length
+  ) {
+    throw new Error(
+      `${chapter.id} must contain exactly 100 scenarios with unique titles and tasks`,
+    );
+  }
+}
 
 export const totalScenarios = chapters.reduce(
   (total, chapter) => total + chapter.scenarios.length,

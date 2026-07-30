@@ -56,6 +56,12 @@ test("defines seven complete capstones and 100 scenarios for every chapter", asy
   assert.match(courseData, /production Kubernetes platform/i);
   assert.match(courseData, /internal developer platform/i);
   assert.match(courseData, /multi-account cloud landing zone/i);
+  assert.match(courseData, /Validate production input/);
+  assert.match(courseData, /Introduce dry-run safety/);
+  assert.match(courseData, /Make the decision testable/);
+  assert.match(courseData, /titles\.size !== chapter\.scenarios\.length/);
+  assert.match(courseData, /tasks\.size !== chapter\.scenarios\.length/);
+  assert.doesNotMatch(courseData, /title: `\$\{seed\.title\} · Case/);
   assert.doesNotMatch(
     courseData,
     /a data engineering team|a finance batch-processing service|an internal support platform/i,
